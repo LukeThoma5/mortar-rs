@@ -6,8 +6,11 @@ use std::str::FromStr;
 use std::collections::HashMap;
 
 mod settings;
+mod Parser;
+
 use settings::Settings;
 use crate::swagger::SwaggerApi;
+use crate::Parser::SwaggerParser;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -19,7 +22,13 @@ async fn main() -> anyhow::Result<()> {
 
     let swagger = swagger_api.get_swagger_info(&settings.swagger_endpoint).await?;
 
-    println!("{:?}", swagger);
+    let mut parser = SwaggerParser::new();
+
+    parser.parse_swagger(swagger);
+
+    let modules = parser.into_modules();
+
+    println!("{:?}", modules);
 
     Ok(())
 }
