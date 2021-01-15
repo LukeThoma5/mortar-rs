@@ -1,6 +1,7 @@
 use crate::swagger::{Swagger, SwaggerEndpoint};
 use anyhow::Result;
 use anyhow::{anyhow, Context};
+use serde::de::value;
 use std::collections::BTreeMap;
 
 #[derive(Debug)]
@@ -20,7 +21,48 @@ pub enum EndpointType {
 }
 
 #[derive(Debug, Clone)]
-pub struct MortarTypeReference(pub String);
+pub enum MortarTypeReference {
+    I32,
+    Str,
+    F32,
+    Bool,
+    Uuid,
+    DateTime,
+    Array(Box<MortarTypeReference>),
+    Reference(String),
+}
+
+impl MortarTypeReference {
+    pub fn new(reference: String) -> Self {
+        Self::Reference(reference)
+    }
+
+    pub fn from_json(value: &serde_json::Value) -> Self {
+        if let Some(v) = value.get("$ref") {
+            Self::new(v.as_str().unwrap().to_owned())
+        } else {
+            match (
+                value.get("type").and_then(|x| x.as_str()),
+                value.get("format").and_then(|x| x.as_str()),
+            ) {
+                (Some("date-time"), _) => Self::DateTime,
+                (_, Some("int32")) => Self::I32,
+                (Some("boolean"), _) => Self::Bool,
+                (Some("float"), _) => Self::F32,
+                (_, Some("uuid")) => Self::Uuid,
+                (Some("string"), _) => Self::Str,
+                (Some("array"), _) => {
+                    let items = value.get("items").expect("Array doesn't specify items");
+
+                    let items = Self::from_json(items);
+
+                    Self::Array(Box::new(items))
+                }
+                t => panic!("Unexpected schema type {:?}", t),
+            }
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct MortarEndpoint {
@@ -107,39 +149,36 @@ impl SwaggerParser {
             }
         };
 
-        // for field in fields.iter() {
-        //     println!("{:?}\n\n", field);
-        // }
-
-        let response_ref = fields
+        let response = fields
             .get("responses")
             .and_then(|v| v.get("200"))
             .and_then(|v| v.get("content"))
             .and_then(|v| v.get("application/json"))
             .and_then(|v| v.get("schema"))
-            .and_then(|v| v.get("$ref"))
-            .and_then(|v| v.as_str())
-            .map(|v| MortarTypeReference(v.to_owned()));
+            .map(|v| MortarTypeReference::from_json(v));
+
+        let request = fields
+            .get("requestBody")
+            .and_then(|v| v.get("content"))
+            .and_then(|v| v.get("application/json"))
+            .and_then(|v| v.get("schema"))
+            .map(|v| MortarTypeReference::from_json(v));
 
         let mut mortar_endpoint = MortarEndpoint {
             path: endpoint_path.to_owned(),
             endpoint_type,
-            response: response_ref,
-            request: None,
+            response,
+            request,
             query_params: vec![],
             route_params: vec![],
             action_name: mortar.action_name,
         };
 
-        if let Some(parameters) = fields.get("parameters").and_then(|v| v.as_array())
-        // .map(|v| v.iter().map(|v| {}));
-        {
+        if let Some(parameters) = fields.get("parameters").and_then(|v| v.as_array()) {
             for param in parameters {
-                // TODO investigate the doesn't have schema
                 let schema = param
                     .get("schema")
-                    .and_then(|v| v.get("$ref"))
-                    .and_then(|v| v.as_str())
+                    .map(|v| MortarTypeReference::from_json(v))
                     .ok_or(anyhow!("param doesn't have schema"))?
                     .to_owned();
 
@@ -149,10 +188,7 @@ impl SwaggerParser {
                     .ok_or(anyhow!("param doesn't have name"))?
                     .to_owned();
 
-                let mortar_param = MortarParam {
-                    name,
-                    schema: MortarTypeReference(schema),
-                };
+                let mortar_param = MortarParam { name, schema };
 
                 match param.get("in").and_then(|v| v.as_str()) {
                     Some("query") => {
@@ -161,16 +197,10 @@ impl SwaggerParser {
                     Some("path") => {
                         mortar_endpoint.route_params.push(mortar_param);
                     }
-                    a => Err(anyhow!("unknown param location"))?,
+                    a => Err(anyhow!("unknown param location {:?}", a))?,
                 };
             }
         }
-
-        // if let Some(resp) = fields.remove("responses") {
-
-        // }
-
-        // panic!("End");
 
         // TODO parse the interfaces we will need
         // TODO figure out how to get a good name for the action creator (e.g. the endpoint name?)

@@ -32,7 +32,9 @@ async fn main() -> anyhow::Result<()> {
 
     let modules = parser.into_modules();
 
-    println!("{:?}", modules);
+    for module in modules {
+        println!("{:?}\n\n", module);
+    }
 
     Ok(())
 }
