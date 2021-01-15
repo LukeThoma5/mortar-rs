@@ -14,7 +14,7 @@ pub struct Swagger {
 
 #[derive(Deserialize, Debug)]
 pub struct SwaggerComponents {
-    schemas: BTreeMap<String, serde_json::Value>,
+    pub schemas: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -44,46 +44,6 @@ pub struct SwaggerEndpoint {
     #[serde(flatten)]
     pub fields: BTreeMap<String, serde_json::Value>,
 }
-
-// fn extract<D>(deserializer: D) -> Result<String, D::Error>
-// where
-//     D: Deserializer,
-// {
-//     #[derive(Deserialize)]
-//     struct Responses {
-//         #[serde(rename = "200")]
-//         pub ok: Response,
-//     }
-
-//     #[derive(Deserialize)]
-//     struct Response {
-//         #[serde(rename = "200")]
-//         pub content: Content,
-//     }
-
-//     #[derive(Deserialize)]
-//     struct Content {
-//         #[serde(rename = "application/json")]
-//         pub json: Types,
-//     }
-//     #[derive(Deserialize)]
-//     struct Types {
-//         pub schema: Schema,
-//     }
-
-//     #[derive(Deserialize)]
-//     struct Schema {
-//         pub jsonRef: SwagRef,
-//     }
-
-//     #[derive(Deserialize)]
-//     struct SwagRef {
-//         #[serde(rename = "$ref")]
-//         pub swag_ref: String,
-//     }
-
-//     Responses::deserialize(deserializer).map(|a| a.ok.content.schema.json.c)
-// }
 
 #[derive(Deserialize, Debug)]
 pub struct MortarEndpointMeta {

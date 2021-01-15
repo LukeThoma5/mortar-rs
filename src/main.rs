@@ -30,9 +30,11 @@ async fn main() -> anyhow::Result<()> {
         .parse_swagger(swagger)
         .context("Failed to parse swagger")?;
 
-    let modules = parser.into_modules();
+    for module in parser.schemas {
+        println!("{:?}\n\n", module);
+    }
 
-    for module in modules {
+    for module in parser.modules {
         println!("{:?}\n\n", module);
     }
 

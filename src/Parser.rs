@@ -2,7 +2,7 @@ use crate::swagger::{Swagger, SwaggerEndpoint};
 use anyhow::Result;
 use anyhow::{anyhow, Context};
 use serde::de::value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 #[derive(Debug)]
 pub struct MortarModule {
@@ -21,20 +21,23 @@ pub enum EndpointType {
 }
 
 #[derive(Debug, Clone)]
-pub enum MortarTypeReference {
+pub enum MortarType {
     I32,
     Str,
     F32,
     Bool,
     Uuid,
     DateTime,
-    Array(Box<MortarTypeReference>),
-    Reference(String),
+    Array(Box<MortarType>),
+    Reference(MortarTypeReference),
 }
 
-impl MortarTypeReference {
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub struct MortarTypeReference(pub String);
+
+impl MortarType {
     pub fn new(reference: String) -> Self {
-        Self::Reference(reference)
+        Self::Reference(MortarTypeReference(reference))
     }
 
     pub fn from_json(value: &serde_json::Value) -> Self {
@@ -70,37 +73,54 @@ pub struct MortarEndpoint {
     pub path: String,
     pub route_params: Vec<MortarParam>,
     pub query_params: Vec<MortarParam>,
-    pub request: Option<MortarTypeReference>,
-    pub response: Option<MortarTypeReference>,
+    pub request: Option<MortarType>,
+    pub response: Option<MortarType>,
     pub action_name: String,
 }
 
 #[derive(Debug)]
 pub struct MortarParam {
     pub name: String,
-    pub schema: MortarTypeReference,
+    pub schema: MortarType,
 }
 
-#[derive(Debug)]
-pub struct MortarType {}
-
 pub struct SwaggerParser {
-    modules: BTreeMap<String, MortarModule>,
+    pub modules: BTreeMap<String, MortarModule>,
+    pub schemas: HashMap<MortarTypeReference, MortarConcreteType>,
+}
+
+#[derive(Debug, Clone)]
+pub enum MortarConcreteTypeType {
+    Enum(Vec<String>),
+    Obj {
+        properties: BTreeMap<String, MortarType>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct MortarConcreteType {
+    pub type_ref: MortarTypeReference,
+    pub namespace: Vec<String>,
+    pub type_name: String,
+    pub data: MortarConcreteTypeType,
 }
 
 impl SwaggerParser {
     pub fn new() -> Self {
         Self {
             modules: BTreeMap::new(),
+            schemas: HashMap::new(),
         }
     }
 
-    pub fn into_modules(self) -> Vec<MortarModule> {
-        self.modules.into_iter().map(|(_, module)| module).collect()
-    }
+    // pub fn into_modules(self) -> Vec<MortarModule> {
+    //     self.modules.into_iter().map(|(_, module)| module).collect()
+    // }
 
     pub fn parse_swagger(&mut self, swagger: Swagger) -> Result<()> {
-        let Swagger { paths, .. } = swagger;
+        let Swagger {
+            paths, components, ..
+        } = swagger;
 
         for (endpoint_path, path) in paths {
             self.parse_endpoint(&endpoint_path, path.get, EndpointType::Get)?;
@@ -108,6 +128,67 @@ impl SwaggerParser {
             self.parse_endpoint(&endpoint_path, path.put, EndpointType::Put)?;
             self.parse_endpoint(&endpoint_path, path.delete, EndpointType::Delete)?;
         }
+
+        for (fragment, val) in components.schemas {
+            self.parse_schema((&fragment, val))
+                .with_context(|| format!("Failed to parse schema {}", &fragment))?;
+        }
+
+        Ok(())
+    }
+
+    fn parse_schema(&mut self, combo: (&str, serde_json::Value)) -> Result<()> {
+        let (schema_fragment, subject) = combo;
+        let reference: String = "#/components/schemas/".to_owned() + &schema_fragment;
+
+        let type_ref = MortarTypeReference(reference);
+
+        let namespace = subject
+            .get("x-mtr")
+            .and_then(|v| v.get("ns"))
+            .and_then(|v| v.as_array())
+            .and_then(|v| {
+                v.iter()
+                    .map(|v| v.as_str().map(|s| s.to_owned()))
+                    .collect::<Option<Vec<_>>>()
+            })
+            .ok_or(anyhow!("Type didn't include namespace"))?;
+
+        let type_name = subject
+            .get("x-mtr")
+            .and_then(|v| v.get("ne"))
+            .and_then(|v| v.as_str().map(|s| s.to_owned()))
+            .ok_or(anyhow!("Type doesn't include name"))?;
+
+        let data = match subject.get("type").and_then(|v| v.as_str()) {
+            Some("object") => MortarConcreteTypeType::Obj {
+                properties: BTreeMap::new(),
+                // TODO map out the properties and start writing the code writing code
+            },
+            Some("string") => {
+                let results = subject.get("enum").and_then(|v| v.as_array()).map(|o| {
+                    o.iter()
+                        .map(|value| value.as_str().unwrap().to_owned())
+                        .collect::<Vec<String>>()
+                });
+
+                if let Some(values) = results {
+                    MortarConcreteTypeType::Enum(values)
+                } else {
+                    Err(anyhow!("type is not an enum {:?}", subject))?
+                }
+            }
+            a => Err(anyhow!("unknown type {:?}", a))?,
+        };
+
+        let concrete = MortarConcreteType {
+            namespace,
+            type_name,
+            type_ref,
+            data,
+        };
+
+        self.schemas.insert(concrete.type_ref.clone(), concrete);
 
         Ok(())
     }
@@ -155,14 +236,14 @@ impl SwaggerParser {
             .and_then(|v| v.get("content"))
             .and_then(|v| v.get("application/json"))
             .and_then(|v| v.get("schema"))
-            .map(|v| MortarTypeReference::from_json(v));
+            .map(|v| MortarType::from_json(v));
 
         let request = fields
             .get("requestBody")
             .and_then(|v| v.get("content"))
             .and_then(|v| v.get("application/json"))
             .and_then(|v| v.get("schema"))
-            .map(|v| MortarTypeReference::from_json(v));
+            .map(|v| MortarType::from_json(v));
 
         let mut mortar_endpoint = MortarEndpoint {
             path: endpoint_path.to_owned(),
@@ -178,7 +259,7 @@ impl SwaggerParser {
             for param in parameters {
                 let schema = param
                     .get("schema")
-                    .map(|v| MortarTypeReference::from_json(v))
+                    .map(|v| MortarType::from_json(v))
                     .ok_or(anyhow!("param doesn't have schema"))?
                     .to_owned();
 
