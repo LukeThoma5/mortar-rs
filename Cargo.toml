@@ -12,6 +12,13 @@ reqwest = { version = "0.10", features = ["json"] }
 tokio = { version = "0.2", features = ["full"] }
 futures = "0.3.4"
 config = "0.9"
+swc_common = {version = "0.10.9", features = ["sourcemap", "concurrent", "tty-emitter"] }
+swc_ecma_codegen = "0.43.1"
+swc_ecma_ast = "0.37.0"
+swc_ecma_parser = "0.45.0"
+swc_ecma_utils = "0.27.0"
+swc_ecma_visit = "0.23.0"
+swc_visit = "0.2.2"
 
 serde = { version = "1.0.89", features = ["derive"] }
 serde_derive = "1.0.89"
