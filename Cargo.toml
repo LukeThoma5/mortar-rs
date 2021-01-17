@@ -6,6 +6,8 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+# using swc from https://github.com/swc-project/swc/tree/4b79cbbffec7a9aac8e85f81f2c6925554a6c666
+
 [dependencies]
 anyhow = "1.0"
 reqwest = { version = "0.10", features = ["json"] }
@@ -14,11 +16,11 @@ futures = "0.3.4"
 config = "0.9"
 swc_common = {version = "0.10.9", features = ["sourcemap", "concurrent", "tty-emitter"] }
 swc_ecma_codegen = "0.43.1"
-swc_ecma_ast = "0.37.0"
-swc_ecma_parser = "0.45.0"
-swc_ecma_utils = "0.27.0"
-swc_ecma_visit = "0.23.0"
+swc_ecma_ast = "0.36.3"
+swc_ecma_parser = "0.44.2"
 swc_visit = "0.2.2"
+swc_atoms = "0.2"
+dprint-plugin-typescript = {version = "0.38.1", path = "./dprint-plugin-typescript"}
 
 serde = { version = "1.0.89", features = ["derive"] }
 serde_derive = "1.0.89"

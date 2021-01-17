@@ -1,6 +1,7 @@
+mod make_module;
 mod swagger;
-
 use anyhow::Context;
+use dprint_plugin_typescript::configuration::{NextControlFlowPosition, QuoteStyle};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -84,14 +85,38 @@ async fn main() -> anyhow::Result<()> {
         })
         .expect("failed to parser module");
 
-    let w = JsWriter::new(cm.clone(), "\n", std::io::stdout(), None);
+    println!("{:#?}", module);
 
-    let mut emitter = Emitter {
-        cfg: Config { minify: false },
-        cm: cm.clone(),
-        comments: None,
-        wr: Box::new(w),
-    };
+    // let w = JsWriter::new(cm.clone(), "\n", std::io::stdout(), None);
+
+    // let mut emitter = Emitter {
+    //     cfg: Config { minify: false },
+    //     cm: cm.clone(),
+    //     comments: None,
+    //     wr: Box::new(w),
+    // };
+
+    // build the configuration once
+    let config = dprint_plugin_typescript::configuration::ConfigurationBuilder::new()
+        .line_width(80)
+        .prefer_hanging(true)
+        .prefer_single_line(false)
+        .quote_style(QuoteStyle::PreferSingle)
+        .next_control_flow_position(NextControlFlowPosition::SameLine)
+        .build();
+
+    let module = make_module::make_example();
+
+    let result = dprint_plugin_typescript::format_from_ast(&config, module);
+    println!("{:?}", result);
+
+    // now format many files (it is recommended to parallelize this)
+    // let files_to_format = vec![(PathBuf::from("path/to/file.ts"), "const  t  =  5 ;")];
+    // for (file_path, file_text) in files_to_format.iter() {
+    //     let result = dprint_plugin_typescript::format_text(file_path, file_text, &config);
+    //     println!("{:?}", result);
+    //     // save result here...
+    // }
 
     // current problem is swc only has emitters / writers for javascript. So the question is what do we do about actually emitting the code?
     // Options turn mortarModule into swc's ast and then write an emitter for the ast or directly try and emit the mortar module.
@@ -101,7 +126,7 @@ async fn main() -> anyhow::Result<()> {
 
     // emitter.emit_module(&module).unwrap();
 
-    println!("{:#?}", module);
+    // println!("{:#?}", module);
 
     Ok(())
 }
