@@ -1,3 +1,4 @@
+use crate::module_codegen::SchemaResolver;
 use crate::swagger::{Swagger, SwaggerEndpoint};
 use anyhow::Result;
 use anyhow::{anyhow, Context};
@@ -12,7 +13,7 @@ pub struct MortarModule {
     pub responses: Vec<MortarType>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum EndpointType {
     Get,
     Post,
@@ -30,6 +31,19 @@ pub enum MortarType {
     DateTime,
     Array(Box<MortarType>),
     Reference(MortarTypeReference),
+}
+
+impl MortarType {
+    pub fn to_type_string(&self, resolver: &SchemaResolver) -> String {
+        // TODO make cow?
+        match self {
+            MortarType::I32 | MortarType::F32 => "number".into(),
+            MortarType::Bool => "boolean".into(),
+            MortarType::Uuid | MortarType::DateTime | MortarType::Str => "string".into(),
+            MortarType::Array(mt) => format!("{}[]", mt.to_type_string(resolver)),
+            MortarType::Reference(r) => resolver.resolve_to_type_name(r).unwrap_or("error".into()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
