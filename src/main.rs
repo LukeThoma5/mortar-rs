@@ -70,22 +70,24 @@ async fn main() -> anyhow::Result<()> {
         StringInput::from(&*fm),
         None,
     );
+    
+    // TODO - completely remove swc from mortar, update dprint to something modern, modify to allow passing in a string content. Make mortar emit (crappy) ts
 
-    let mut parser = Parser::new_from(lexer);
+    // let mut parser = Parser::new_from(lexer);
 
-    for e in parser.take_errors() {
-        e.into_diagnostic(&handler).emit();
-    }
+    // for e in parser.take_errors() {
+    //     e.into_diagnostic(&handler).emit();
+    // }
+    // 
+    // let module = parser
+    //     .parse_module()
+    //     .map_err(|mut e| {
+    //         // Unrecoverable fatal error occurred
+    //         e.into_diagnostic(&handler).emit()
+    //     })
+    //     .expect("failed to parser module");
 
-    let module = parser
-        .parse_module()
-        .map_err(|mut e| {
-            // Unrecoverable fatal error occurred
-            e.into_diagnostic(&handler).emit()
-        })
-        .expect("failed to parser module");
-
-    println!("{:#?}", module);
+    // println!("{:#?}", module);
 
     // let w = JsWriter::new(cm.clone(), "\n", std::io::stdout(), None);
 
@@ -105,9 +107,9 @@ async fn main() -> anyhow::Result<()> {
         .next_control_flow_position(NextControlFlowPosition::SameLine)
         .build();
 
-    let module = make_module::make_example();
+    // let module = make_module::make_example();
 
-    let result = dprint_plugin_typescript::format_from_ast(&config, module);
+    let result = dprint_plugin_typescript::format_from_input(lexer, &config);
     println!("{:?}", result);
 
     // now format many files (it is recommended to parallelize this)
