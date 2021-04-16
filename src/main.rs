@@ -1,6 +1,7 @@
 mod formatter;
 mod module_codegen;
 mod mortar_type;
+mod string_tools;
 mod swagger;
 use anyhow::Context;
 use std::path::PathBuf;

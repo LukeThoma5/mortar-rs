@@ -1,4 +1,9 @@
-use crate::parser::{EndpointType, MortarConcreteType, MortarModule, MortarTypeReference};
+use crate::{
+    parser::{EndpointType, MortarConcreteType, MortarEndpoint, MortarModule, MortarTypeReference},
+    string_tools::ensure_camel_case,
+};
+use anyhow::anyhow;
+use serde_json::json;
 use std::{collections::HashMap, fmt::Write, rc::Rc};
 
 pub struct SchemaResolver {
@@ -41,76 +46,185 @@ impl ModuleCodeGenerator {
         Self { module, resolver }
     }
 
+    fn make_action_request(
+        &self,
+        endpoint: &MortarEndpoint,
+    ) -> anyhow::Result<serde_json::Map<String, serde_json::Value>> {
+        let mut object_def = serde_json::Map::new();
+
+        if !endpoint.route_params.is_empty() {
+            let mut route_params = serde_json::Map::new();
+
+            for route_param in &endpoint.route_params {
+                let mut key = route_param.name.clone();
+                ensure_camel_case(&mut key);
+                let type_str = route_param.schema.to_type_string(&self.resolver);
+                route_params.insert(key, serde_json::Value::String(type_str));
+            }
+
+            object_def.insert(
+                "routeParams".to_owned(),
+                serde_json::Value::Object(route_params),
+            );
+        }
+
+        if !endpoint.query_params.is_empty() {
+            let mut query_params = serde_json::Map::new();
+
+            for query_param in &endpoint.query_params {
+                let mut key = query_param.name.clone();
+                ensure_camel_case(&mut key);
+                let type_str = query_param.schema.to_type_string(&self.resolver);
+                query_params.insert(key, serde_json::Value::String(type_str));
+            }
+
+            object_def.insert(
+                "queryParams".to_owned(),
+                serde_json::Value::Object(query_params),
+            );
+        }
+
+        if let Some(req) = &endpoint.request {
+            object_def.insert(
+                "request".to_owned(),
+                serde_json::Value::String(req.to_type_string(&self.resolver)),
+            );
+        }
+
+        Ok(object_def)
+    }
+
+    fn write_structure_to_file(
+        &self,
+        file: &mut String,
+        def: &serde_json::Value,
+    ) -> anyhow::Result<()> {
+        match def {
+            serde_json::Value::String(s) => write!(file, "{}", s)?,
+            // serde_json::Value::Bool(b) => write!(file, "\"{}\"", if *b { "true" } else { "false" })?,
+            serde_json::Value::Object(o) => {
+                write!(file, "{{")?;
+                for (key, val) in o {
+                    write!(file, "{}:", key)?;
+                    self.write_structure_to_file(file, val)?;
+                    write!(file, ";\n\n")?;
+                }
+
+                write!(file, "}}")?;
+            }
+            _ => Err(anyhow!("unhandled json type"))?,
+        };
+
+        // write!(file, "{{")
+
+        Ok(())
+    }
+
     pub fn generate(&self) -> anyhow::Result<String> {
         let mut file = String::with_capacity(1024 * 1024);
 
         for endpoint in &self.module.endpoints {
-            writeln!(file, "export const {} = ", endpoint.action_name)?;
+            // TODO make a request object for each request. One that has the specified route/query-params/request_body etc etc etc
+            let formatted_route = endpoint.path.replace("{", "${routeParams.");
+
+            let mut action_request = self.make_action_request(endpoint)?;
+            let action_request_name = format!("{}ActionRequest", endpoint.action_name);
+            let action_type = format!("{}/{}", &self.module.name, endpoint.action_name);
+
+            let return_type = endpoint
+                .response
+                .as_ref()
+                .map(|r| r.to_type_string(&self.resolver))
+                .unwrap_or("void".to_owned());
+
+            // TODO going to need to make action_request its own type so it can express optionability e.g. this should be options?: Partial<_>
+            // TODO start tracking the imports required
+            // TODO start the process of writing this out to disk
+            // TODO start the code gen for request/view emittion
+            // Reminder use the reco branch `feature/mortar`
+            action_request.insert(
+                "options".to_string(),
+                serde_json::Value::String(format!(
+                    "Partial<ApiRequestOptions<{}, \"{}\">>",
+                    &return_type, &action_type
+                )),
+            );
+
+            // no more mutating
+            let action_request = action_request;
+
+            if !action_request.is_empty() {
+                write!(file, "export interface {}", &action_request_name)?;
+                self.write_structure_to_file(
+                    &mut file,
+                    &serde_json::Value::Object(action_request.clone()),
+                )?;
+
+                writeln!(file, "\n")?;
+            }
+
+            writeln!(file, "export const {} = (", endpoint.action_name)?;
+
+            if !action_request.is_empty() {
+                write!(file, "{{")?;
+                for key in action_request.keys() {
+                    write!(file, "{},\n", key)?;
+                }
+
+                write!(file, "}}:{}", &action_request_name)?;
+            }
+
+            write!(file, ") => ")?;
+
+            let write_optional = |file: &mut String, key: &str| -> anyhow::Result<()> {
+                if action_request.contains_key(key) {
+                    write!(file, "{},", key)?;
+                } else {
+                    write!(file, "undefined,")?;
+                }
+
+                Ok(())
+            };
 
             match &endpoint.endpoint_type {
                 EndpointType::Get => {
-                    let return_type = endpoint
-                        .response
-                        .as_ref()
-                        .map(|r| r.to_type_string(&self.resolver))
-                        .unwrap_or("void".to_owned());
-
-                    let mut request_type = endpoint.action_name.to_owned();
-                    request_type.push_str("Request");
-
-                    // TODO replace the path parms with their actual values
-
-                    // TODO how to handle input params. Maybe we should have just the 1 object and its up to the caller to use a helper
-                    // to squish listbuilderstate+load params into just load params. (so that it works for modals as well)
-
                     writeln!(
                         file,
-                        "(data: GetRequest<{}>) =>
-                    {{
-                        const {{ routeParams }} = data;
-                        return apiGet<{}>(`{}`);
-                    }}
-                    ",
-                        request_type, return_type, endpoint.path
+                        "apiGet<{}>(\"{}\" as \"{}\", `{}`,",
+                        return_type, &action_type, &action_type, formatted_route
                     )?;
-
-                    println!("{:?}", endpoint)
-                }
-                EndpointType::Post => {
-                    let request_type = endpoint
-                        .request
-                        .as_ref()
-                        .map(|r| r.to_type_string(&self.resolver))
-                        .unwrap_or("void".to_owned());
-
-                    let return_type = endpoint
-                        .response
-                        .as_ref()
-                        .map(|r| r.to_type_string(&self.resolver))
-                        .unwrap_or("void".to_owned());
-
-                    writeln!(
-                        file,
-                        "(data: PostRequest<{}, {}>) =>
-                    {{
-                        const {{ routeParams, request }} = data;
-                        return apiPost<{}>(`{}`, request);
-                    }}
-                    ",
-                        &request_type, &return_type, &return_type, &endpoint.path
-                    )?;
-
-                    println!("{:?}", endpoint)
+                    write_optional(&mut file, "queryParams")?;
+                    write_optional(&mut file, "options")?;
+                    writeln!(file, ");")?;
                 }
                 _ => {
-                    writeln!(file, "() => {{}};")?;
+                    writeln!(
+                        file,
+                        "api{}<{}>(\"{}\" as \"{}\",`{}`,",
+                        match &endpoint.endpoint_type {
+                            EndpointType::Post => "Post",
+                            EndpointType::Put => "Put",
+                            EndpointType::Delete => "apiDelete",
+                            _ => Err(anyhow!(
+                                "Unknown endpoint type {:?}",
+                                endpoint.endpoint_type
+                            ))?,
+                        },
+                        &return_type,
+                        &action_type,
+                        &action_type,
+                        &formatted_route
+                    )?;
+                    write_optional(&mut file, "request")?;
+                    write_optional(&mut file, "options")?;
+                    writeln!(file, ");")?;
                 }
             };
 
             writeln!(file, "\n")?;
         }
 
-        println!("{}", &file);
+        // println!("{}", &file);
 
         return Ok(file);
     }
