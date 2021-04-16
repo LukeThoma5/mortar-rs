@@ -1,5 +1,6 @@
 mod formatter;
 mod module_codegen;
+mod mortar_type;
 mod swagger;
 use anyhow::Context;
 use std::path::PathBuf;
@@ -25,11 +26,9 @@ async fn main() -> anyhow::Result<()> {
         .get_swagger_info(&settings.swagger_endpoint)
         .await?;
 
-    let mut parser = SwaggerParser::new();
+    let mut parser = SwaggerParser::new(swagger);
 
-    parser
-        .parse_swagger(swagger)
-        .context("Failed to parse swagger")?;
+    parser.parse_swagger().context("Failed to parse swagger")?;
 
     // for module in parser.schemas {
     //     println!("{:?}\n\n", module);
@@ -37,11 +36,13 @@ async fn main() -> anyhow::Result<()> {
 
     let formatter = formatter::Formatter::new();
 
-    let SwaggerParser { modules, schemas } = parser;
+    let SwaggerParser {
+        modules, schemas, ..
+    } = parser;
 
     let resolver = Rc::new(module_codegen::SchemaResolver::new(schemas));
 
-    for (path, module) in modules {
+    for (path, module) in modules.into_iter().take(1) {
         // println!("{:?}\n\n", module);
         let gen = module_codegen::ModuleCodeGenerator::new(module, resolver.clone());
 

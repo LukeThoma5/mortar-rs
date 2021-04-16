@@ -33,7 +33,7 @@ pub struct SwaggerPath {
     pub delete: Option<SwaggerEndpoint>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct SwaggerEndpoint {
     pub tags: Vec<String>,
     pub description: Option<String>,
@@ -45,7 +45,7 @@ pub struct SwaggerEndpoint {
     pub fields: BTreeMap<String, serde_json::Value>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct MortarEndpointMeta {
     #[serde(rename = "an")]
     pub action_name: String,

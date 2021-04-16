@@ -1,5 +1,9 @@
-use crate::module_codegen::SchemaResolver;
+use crate::mortar_type::MortarType;
 use crate::swagger::{Swagger, SwaggerEndpoint};
+use crate::{
+    module_codegen::SchemaResolver,
+    swagger::{SwaggerComponents, SwaggerPath},
+};
 use anyhow::Result;
 use anyhow::{anyhow, Context};
 use serde::de::value;
@@ -19,18 +23,6 @@ pub enum EndpointType {
     Post,
     Put,
     Delete,
-}
-
-#[derive(Debug, Clone)]
-pub enum MortarType {
-    I32,
-    Str,
-    F32,
-    Bool,
-    Uuid,
-    DateTime,
-    Array(Box<MortarType>),
-    Reference(MortarTypeReference),
 }
 
 impl MortarType {
@@ -101,6 +93,8 @@ pub struct MortarParam {
 pub struct SwaggerParser {
     pub modules: BTreeMap<String, MortarModule>,
     pub schemas: HashMap<MortarTypeReference, MortarConcreteType>,
+    pub paths: Option<HashMap<String, SwaggerPath>>,
+    pub components: SwaggerComponents,
 }
 
 #[derive(Debug, Clone)]
@@ -117,13 +111,19 @@ pub struct MortarConcreteType {
     pub namespace: Vec<String>,
     pub type_name: String,
     pub data: MortarConcreteTypeType,
+    pub generic_arguments: Vec<MortarConcreteType>,
 }
 
 impl SwaggerParser {
-    pub fn new() -> Self {
+    pub fn new(swagger: Swagger) -> Self {
+        let Swagger {
+            paths, components, ..
+        } = swagger;
         Self {
             modules: BTreeMap::new(),
             schemas: HashMap::new(),
+            paths: Some(paths),
+            components,
         }
     }
 
@@ -131,11 +131,9 @@ impl SwaggerParser {
     //     self.modules.into_iter().map(|(_, module)| module).collect()
     // }
 
-    pub fn parse_swagger(&mut self, swagger: Swagger) -> Result<()> {
-        let Swagger {
-            paths, components, ..
-        } = swagger;
-
+    pub fn parse_swagger(&mut self) -> Result<()> {
+        let paths = self.paths.take().context("Paths already taken")?;
+        // todo make this drain
         for (endpoint_path, path) in paths {
             self.parse_endpoint(&endpoint_path, path.get, EndpointType::Get)?;
             self.parse_endpoint(&endpoint_path, path.post, EndpointType::Post)?;
@@ -143,22 +141,37 @@ impl SwaggerParser {
             self.parse_endpoint(&endpoint_path, path.delete, EndpointType::Delete)?;
         }
 
-        for (fragment, val) in components.schemas {
-            self.parse_schema((&fragment, val))
-                .with_context(|| format!("Failed to parse schema {}", &fragment))?;
+        let keys = self
+            .components
+            .schemas
+            .keys()
+            .map(|k| k.clone())
+            .collect::<Vec<String>>();
+        for schema_fragment in keys {
+            let reference: String = "#/components/schemas/".to_owned() + &schema_fragment;
+            let type_ref = MortarTypeReference(reference);
+            self.parse_schema(type_ref)
+                .with_context(|| format!("Failed to parse schema {}", &schema_fragment))?;
         }
 
         Ok(())
     }
 
-    fn parse_schema(&mut self, combo: (&str, serde_json::Value)) -> Result<()> {
-        let (schema_fragment, subject) = combo;
-        let reference: String = "#/components/schemas/".to_owned() + &schema_fragment;
+    fn parse_schema(&mut self, type_ref: MortarTypeReference) -> Result<MortarConcreteType> {
+        let subject = self
+            .components
+            .schemas
+            .get(
+                type_ref
+                    .0
+                    .strip_prefix("#/components/schemas/")
+                    .with_context(|| format!("Malformed mortar reference {}", &type_ref.0))?,
+            )
+            .with_context(|| format!("Failed to get schema {}", &type_ref.0))?;
 
-        let type_ref = MortarTypeReference(reference);
+        let root = subject.get("x-mtr");
 
-        let namespace = subject
-            .get("x-mtr")
+        let namespace = root
             .and_then(|v| v.get("ns"))
             .and_then(|v| v.as_array())
             .and_then(|v| {
@@ -168,8 +181,7 @@ impl SwaggerParser {
             })
             .ok_or(anyhow!("Type didn't include namespace"))?;
 
-        let type_name = subject
-            .get("x-mtr")
+        let type_name = root
             .and_then(|v| v.get("ne"))
             .and_then(|v| v.as_str().map(|s| s.to_owned()))
             .ok_or(anyhow!("Type doesn't include name"))?;
@@ -195,16 +207,33 @@ impl SwaggerParser {
             a => Err(anyhow!("unknown type {:?}", a))?,
         };
 
-        let concrete = MortarConcreteType {
+        let mut concrete = MortarConcreteType {
             namespace,
             type_name,
             type_ref,
             data,
+            generic_arguments: vec![],
         };
 
-        self.schemas.insert(concrete.type_ref.clone(), concrete);
+        if let Some(generic_args) = root
+            .and_then(|v| v.get("ga"))
+            .and_then(|v| v.as_array())
+            .and_then(|v| {
+                v.iter()
+                    .map(|v| v.as_str().map(|s| MortarTypeReference(s.to_owned())))
+                    .collect::<Option<Vec<_>>>()
+            })
+        {
+            concrete.generic_arguments = generic_args
+                .into_iter()
+                .map(|r| self.parse_schema(r))
+                .collect::<Result<_>>()?;
+        }
 
-        Ok(())
+        self.schemas
+            .insert(concrete.type_ref.clone(), concrete.clone());
+
+        Ok(concrete)
     }
 
     fn parse_endpoint(
