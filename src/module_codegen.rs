@@ -1,7 +1,8 @@
+extern crate lazysort;
 use crate::{
     mortar_type::MortarType,
     parser::{EndpointType, MortarConcreteType, MortarEndpoint, MortarModule, MortarTypeReference},
-    string_tools::ensure_camel_case,
+    string_tools::{ensure_camel_case, ensure_pascal_case},
 };
 use anyhow::{anyhow, Context};
 use serde_json::json;
@@ -10,6 +11,8 @@ use std::{
     fmt::Write,
     rc::Rc,
 };
+
+use lazysort::SortedBy;
 
 #[derive(Debug)]
 pub struct ImportTracker {
@@ -224,12 +227,19 @@ impl ModuleCodeGenerator {
         let mut file = String::with_capacity(1024 * 1024);
 
         // todo drain rather than clone
-        for endpoint in self.module.endpoints.clone() {
-            // TODO make a request object for each request. One that has the specified route/query-params/request_body etc etc etc
+        for endpoint in self
+            .module
+            .endpoints
+            .clone()
+            .into_iter()
+            .sorted_by(|a, b| a.path.cmp(&b.path))
+        {
             let formatted_route = endpoint.path.replace("{", "${routeParams.");
 
             let mut action_request = self.make_action_request(&endpoint)?;
-            let action_request_name = format!("{}ActionRequest", endpoint.action_name);
+            let mut action_request_name = endpoint.action_name.clone();
+            ensure_pascal_case(&mut action_request_name);
+            action_request_name.push_str("ActionRequest");
             let action_type = format!("{}/{}", &self.module.name, endpoint.action_name);
 
             let return_type = endpoint
@@ -242,7 +252,6 @@ impl ModuleCodeGenerator {
                 .unwrap_or("void".to_owned());
 
             // TODO going to need to make action_request its own type so it can express optionability e.g. this should be options?: Partial<_>
-            // TODO start tracking the imports required
             // TODO start the process of writing this out to disk
             // TODO start the code gen for request/view emittion
             // Reminder use the reco branch `feature/mortar`
@@ -308,7 +317,7 @@ impl ModuleCodeGenerator {
                         match &endpoint.endpoint_type {
                             EndpointType::Post => "Post",
                             EndpointType::Put => "Put",
-                            EndpointType::Delete => "apiDelete",
+                            EndpointType::Delete => "Delete",
                             _ => Err(anyhow!(
                                 "Unknown endpoint type {:?}",
                                 endpoint.endpoint_type
@@ -336,9 +345,13 @@ impl ModuleCodeGenerator {
             .write_imports(&mut import_header, &self.resolver)
             .context("Failed to generate imports")?;
 
+        let default_imports =
+            "import {apiGet, apiPost, apiDelete, apiPut, ApiRequestOptions} from 'cinnamon';";
+
         let file = format!(
-            "// Auto Generated file, do not modify\n{}\n\n{}\n",
-            import_header, file
+            "// Auto Generated file, do not modify
+            {}\n{}\n\n{}\n",
+            default_imports, import_header, file
         );
 
         return Ok(file);

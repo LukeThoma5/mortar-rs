@@ -49,9 +49,18 @@ async fn main() -> anyhow::Result<()> {
 
         let bad_code = gen.generate()?;
 
-        let result = formatter.format(&bad_code)?;
+        let result = formatter
+            .format(&bad_code)
+            .with_context(|| format!("Failed to format the module: {}\n", _path));
 
-        println!("{}", result);
+        match result {
+            Err(e) => {
+                println!("{:?}", e)
+            }
+            Ok(file) => {
+                println!("{}", file);
+            }
+        }
     }
 
     Ok(())

@@ -9,6 +9,7 @@ edition = "2018"
 # using swc from https://github.com/swc-project/swc/tree/4b79cbbffec7a9aac8e85f81f2c6925554a6c666
 
 [dependencies]
+lazysort = "0.2.1"
 anyhow = "1.0"
 reqwest = { version = "0.10", features = ["json"] }
 tokio = { version = "0.2", features = ["full"] }
