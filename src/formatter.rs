@@ -10,9 +10,8 @@ impl Formatter {
         // build the configuration once
         let config = dprint_plugin_typescript::configuration::ConfigurationBuilder::new()
             .line_width(80)
-            .prefer_hanging(true)
             .prefer_single_line(false)
-            .quote_style(QuoteStyle::PreferSingle)
+            .quote_style(QuoteStyle::AlwaysDouble)
             .next_control_flow_position(NextControlFlowPosition::SameLine)
             .build();
 

@@ -1,6 +1,6 @@
 use crate::parser::MortarTypeReference;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub enum MortarType {
     I32,
     Str,

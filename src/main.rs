@@ -43,9 +43,9 @@ async fn main() -> anyhow::Result<()> {
 
     let resolver = Rc::new(module_codegen::SchemaResolver::new(schemas));
 
-    for (path, module) in modules.into_iter().take(1) {
+    for (_path, module) in modules.into_iter().take(1) {
         // println!("{:?}\n\n", module);
-        let gen = module_codegen::ModuleCodeGenerator::new(module, resolver.clone());
+        let mut gen = module_codegen::ModuleCodeGenerator::new(module, resolver.clone());
 
         let bad_code = gen.generate()?;
 

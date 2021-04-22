@@ -67,13 +67,16 @@ impl MortarType {
 
                     Self::Array(Box::new(items))
                 }
-                t => panic!("Unexpected schema type {:?}", t),
+                _ => match value.get("additionalProperties") {
+                    Some(x) if x.is_object() => MortarType::from_json(x),
+                    _ => panic!("Unexpected schema type {:?} ", value),
+                },
             }
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MortarEndpoint {
     pub endpoint_type: EndpointType,
     pub path: String,
@@ -84,7 +87,7 @@ pub struct MortarEndpoint {
     pub action_name: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MortarParam {
     pub name: String,
     pub schema: MortarType,

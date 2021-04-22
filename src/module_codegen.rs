@@ -1,10 +1,95 @@
 use crate::{
+    mortar_type::MortarType,
     parser::{EndpointType, MortarConcreteType, MortarEndpoint, MortarModule, MortarTypeReference},
     string_tools::ensure_camel_case,
 };
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use serde_json::json;
-use std::{collections::HashMap, fmt::Write, rc::Rc};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Write,
+    rc::Rc,
+};
+
+#[derive(Debug)]
+pub struct ImportTracker {
+    imports: HashSet<MortarType>,
+}
+
+impl ImportTracker {
+    pub fn new() -> Self {
+        Self {
+            imports: HashSet::new(),
+        }
+    }
+
+    pub fn track_ref(&mut self, reference: MortarTypeReference) {
+        self.imports.insert(MortarType::Reference(reference));
+    }
+
+    pub fn track_type(&mut self, reference: MortarType) {
+        self.imports.insert(reference);
+    }
+
+    pub fn write_imports(
+        &mut self,
+        file: &mut String,
+        resolver: &SchemaResolver,
+    ) -> anyhow::Result<()> {
+        let import_map = self.emit_imports(resolver);
+
+        for (path, imports) in import_map {
+            write!(file, "import {{")?;
+            for import in imports {
+                write!(file, "{},", import)?;
+            }
+
+            write!(file, "}} from \"{}\";\n", path)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn emit_imports(&mut self, resolver: &SchemaResolver) -> HashMap<String, HashSet<String>> {
+        let mut import_collection: HashMap<String, HashSet<String>> = HashMap::new();
+
+        fn add_concrete_type(
+            t: &MortarConcreteType,
+            imports: &mut HashMap<String, HashSet<String>>,
+        ) {
+            for generic in t.generic_arguments.clone() {
+                add_concrete_type(&generic, imports);
+            }
+
+            let path = format!("~mortar/{}", t.namespace.clone().join("/"));
+
+            let map = imports.entry(path).or_default();
+
+            map.insert(t.type_name.clone());
+        }
+
+        fn add_type(
+            t: &MortarType,
+            resolver: &SchemaResolver,
+            imports: &mut HashMap<String, HashSet<String>>,
+        ) {
+            match t {
+                MortarType::Array(arr_type) => add_type(&arr_type, resolver, imports),
+                MortarType::Reference(ref reference) => {
+                    let concrete_type = resolver.resolve_to_type(reference).unwrap();
+                    add_concrete_type(concrete_type, imports);
+                }
+                _ => {}
+            }
+        }
+
+        for imported_type in &self.imports {
+            add_type(imported_type, resolver, &mut import_collection);
+        }
+
+        import_collection
+    }
+}
 
 pub struct SchemaResolver {
     pub schemas: HashMap<MortarTypeReference, MortarConcreteType>,
@@ -34,20 +119,32 @@ impl SchemaResolver {
     pub fn resolve_to_type_name(&self, type_ref: &MortarTypeReference) -> Option<String> {
         self.schemas.get(type_ref).map(map_concrete_type)
     }
+
+    pub fn resolve_to_type<'a>(
+        &'a self,
+        type_ref: &MortarTypeReference,
+    ) -> Option<&'a MortarConcreteType> {
+        self.schemas.get(type_ref)
+    }
 }
 
 pub struct ModuleCodeGenerator {
     module: MortarModule,
     resolver: Rc<SchemaResolver>,
+    imports: ImportTracker,
 }
 
 impl ModuleCodeGenerator {
     pub fn new(module: MortarModule, resolver: Rc<SchemaResolver>) -> Self {
-        Self { module, resolver }
+        Self {
+            module,
+            resolver,
+            imports: ImportTracker::new(),
+        }
     }
 
     fn make_action_request(
-        &self,
+        &mut self,
         endpoint: &MortarEndpoint,
     ) -> anyhow::Result<serde_json::Map<String, serde_json::Value>> {
         let mut object_def = serde_json::Map::new();
@@ -58,6 +155,7 @@ impl ModuleCodeGenerator {
             for route_param in &endpoint.route_params {
                 let mut key = route_param.name.clone();
                 ensure_camel_case(&mut key);
+                self.imports.track_type(route_param.schema.clone());
                 let type_str = route_param.schema.to_type_string(&self.resolver);
                 route_params.insert(key, serde_json::Value::String(type_str));
             }
@@ -74,6 +172,7 @@ impl ModuleCodeGenerator {
             for query_param in &endpoint.query_params {
                 let mut key = query_param.name.clone();
                 ensure_camel_case(&mut key);
+                self.imports.track_type(query_param.schema.clone());
                 let type_str = query_param.schema.to_type_string(&self.resolver);
                 query_params.insert(key, serde_json::Value::String(type_str));
             }
@@ -85,6 +184,7 @@ impl ModuleCodeGenerator {
         }
 
         if let Some(req) = &endpoint.request {
+            self.imports.track_type(req.clone());
             object_def.insert(
                 "request".to_owned(),
                 serde_json::Value::String(req.to_type_string(&self.resolver)),
@@ -120,21 +220,25 @@ impl ModuleCodeGenerator {
         Ok(())
     }
 
-    pub fn generate(&self) -> anyhow::Result<String> {
+    pub fn generate(&mut self) -> anyhow::Result<String> {
         let mut file = String::with_capacity(1024 * 1024);
 
-        for endpoint in &self.module.endpoints {
+        // todo drain rather than clone
+        for endpoint in self.module.endpoints.clone() {
             // TODO make a request object for each request. One that has the specified route/query-params/request_body etc etc etc
             let formatted_route = endpoint.path.replace("{", "${routeParams.");
 
-            let mut action_request = self.make_action_request(endpoint)?;
+            let mut action_request = self.make_action_request(&endpoint)?;
             let action_request_name = format!("{}ActionRequest", endpoint.action_name);
             let action_type = format!("{}/{}", &self.module.name, endpoint.action_name);
 
             let return_type = endpoint
                 .response
                 .as_ref()
-                .map(|r| r.to_type_string(&self.resolver))
+                .map(|r| {
+                    self.imports.track_type(r.clone());
+                    r.to_type_string(&self.resolver)
+                })
                 .unwrap_or("void".to_owned());
 
             // TODO going to need to make action_request its own type so it can express optionability e.g. this should be options?: Partial<_>
@@ -224,7 +328,18 @@ impl ModuleCodeGenerator {
             writeln!(file, "\n")?;
         }
 
+        let mut import_header = String::with_capacity(10 * 1024);
+
         // println!("{}", &file);
+
+        self.imports
+            .write_imports(&mut import_header, &self.resolver)
+            .context("Failed to generate imports")?;
+
+        let file = format!(
+            "// Auto Generated file, do not modify\n{}\n\n{}\n",
+            import_header, file
+        );
 
         return Ok(file);
     }
