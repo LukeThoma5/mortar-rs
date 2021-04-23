@@ -1,7 +1,10 @@
 extern crate lazysort;
 use crate::{
     mortar_type::MortarType,
-    parser::{EndpointType, MortarConcreteType, MortarEndpoint, MortarModule, MortarTypeReference},
+    parser::{
+        EndpointType, MortarConcreteType, MortarConcreteTypeType, MortarEndpoint, MortarModule,
+        MortarTypeReference,
+    },
     string_tools::{ensure_camel_case, ensure_pascal_case},
 };
 use anyhow::{anyhow, Context};
@@ -11,11 +14,19 @@ use std::{
     rc::Rc,
 };
 
-use lazysort::SortedBy;
+use itertools::Itertools;
+
+// use lazysort::SortedBy;
 
 #[derive(Debug)]
 pub struct ImportTracker {
     imports: HashSet<MortarType>,
+}
+
+fn get_concrete_type_path(t: &MortarConcreteType) -> String {
+    let path = format!("~mortar/{}", t.namespace.clone().join("/"));
+
+    path
 }
 
 impl ImportTracker {
@@ -63,7 +74,7 @@ impl ImportTracker {
                 add_concrete_type(&generic, imports);
             }
 
-            let path = format!("~mortar/{}", t.namespace.clone().join("/"));
+            let path = get_concrete_type_path(t);
 
             let map = imports.entry(path).or_default();
 
@@ -227,216 +238,281 @@ pub enum MortarTypeOrAnon {
     BlackBox(String),
 }
 
-pub struct ModuleCodeGenerator {
-    module: MortarModule,
-    resolver: Rc<SchemaResolver>,
-    imports: ImportTracker,
+fn make_action_request(
+    imports: &mut ImportTracker,
+    endpoint: &MortarEndpoint,
+) -> anyhow::Result<AnonymousTypeDefinition> {
+    let mut object_def = AnonymousTypeDefinition::new();
+
+    if !endpoint.route_params.is_empty() {
+        let mut route_params = AnonymousTypeDefinition::new();
+
+        for route_param in &endpoint.route_params {
+            let mut key = route_param.name.clone();
+            ensure_camel_case(&mut key);
+            imports.track_type(route_param.schema.clone());
+            route_params.add_property(TypeDefinitionProperty {
+                name: key,
+                optional: false,
+                prop_type: MortarTypeOrAnon::Type(route_param.schema.clone()),
+            });
+        }
+
+        object_def.add_property(TypeDefinitionProperty {
+            name: "routeParams".to_owned(),
+            optional: false,
+            prop_type: MortarTypeOrAnon::Anon(route_params),
+        });
+    }
+
+    if !endpoint.query_params.is_empty() {
+        let mut query_params = AnonymousTypeDefinition::new();
+
+        for query_param in &endpoint.query_params {
+            let mut key = query_param.name.clone();
+            ensure_camel_case(&mut key);
+            imports.track_type(query_param.schema.clone());
+            query_params.add_property(TypeDefinitionProperty {
+                name: key,
+                optional: false,
+                prop_type: MortarTypeOrAnon::Type(query_param.schema.clone()),
+            });
+        }
+
+        object_def.add_property(TypeDefinitionProperty {
+            name: "queryParams".to_owned(),
+            optional: false,
+            prop_type: MortarTypeOrAnon::Anon(query_params),
+        });
+    }
+
+    if let Some(req) = &endpoint.request {
+        imports.track_type(req.clone());
+        object_def.add_property(TypeDefinitionProperty {
+            name: "request".to_owned(),
+            optional: false,
+            prop_type: MortarTypeOrAnon::Type(req.clone()),
+        });
+    }
+
+    Ok(object_def)
 }
 
-impl ModuleCodeGenerator {
-    pub fn new(module: MortarModule, resolver: Rc<SchemaResolver>) -> Self {
-        Self {
-            module,
-            resolver,
-            imports: ImportTracker::new(),
+fn create_action_request_name(endpoint: &MortarEndpoint) -> String {
+    let mut action_request_name = endpoint.action_name.clone();
+    ensure_pascal_case(&mut action_request_name);
+    action_request_name.push_str("ActionRequest");
+
+    action_request_name
+}
+
+pub fn generate_actions_file(
+    module: MortarModule,
+    resolver: Rc<SchemaResolver>,
+) -> anyhow::Result<String> {
+    let mut imports = ImportTracker::new();
+    let mut file = String::with_capacity(1024 * 1024);
+
+    // todo drain rather than clone
+    for endpoint in module
+        .endpoints
+        .clone()
+        .into_iter()
+        .sorted_by(|a, b| a.path.cmp(&b.path))
+    {
+        let formatted_route = endpoint.path.replace("{", "${routeParams.");
+
+        let mut action_request = make_action_request(&mut imports, &endpoint)?;
+
+        let action_type = format!("{}/{}", &module.name, endpoint.action_name);
+
+        let return_type = endpoint
+            .response
+            .as_ref()
+            .map(|r| {
+                imports.track_type(r.clone());
+                r.to_type_string(&resolver)
+            })
+            .unwrap_or("void".to_owned());
+
+        action_request.add_property(TypeDefinitionProperty {
+            name: "options".to_string(),
+            optional: true,
+            prop_type: MortarTypeOrAnon::BlackBox(format!(
+                "Partial<ApiRequestOptions<{}, \"{}\">>",
+                &return_type, &action_type
+            )),
+        });
+
+        // TODO start the process of writing this out to disk
+        // TODO start the code gen for request/view emittion
+        // Reminder use the reco branch `feature/mortar`
+
+        // no more mutating
+        let action_request = NamedTypeDefinition {
+            def: action_request,
+            name: create_action_request_name(&endpoint),
+        };
+
+        if !action_request.is_empty() {
+            action_request.write_structure_to_file(&mut file, &resolver)?;
+            writeln!(file, "\n")?;
         }
-    }
 
-    fn make_action_request(
-        &mut self,
-        endpoint: &MortarEndpoint,
-    ) -> anyhow::Result<AnonymousTypeDefinition> {
-        let mut object_def = AnonymousTypeDefinition::new();
+        writeln!(file, "export const {} = (", endpoint.action_name)?;
 
-        if !endpoint.route_params.is_empty() {
-            let mut route_params = AnonymousTypeDefinition::new();
-
-            for route_param in &endpoint.route_params {
-                let mut key = route_param.name.clone();
-                ensure_camel_case(&mut key);
-                self.imports.track_type(route_param.schema.clone());
-                route_params.add_property(TypeDefinitionProperty {
-                    name: key,
-                    optional: false,
-                    prop_type: MortarTypeOrAnon::Type(route_param.schema.clone()),
-                });
+        if !action_request.is_empty() {
+            write!(file, "{{")?;
+            for key in action_request.def.properties.iter().map(|p| &p.name) {
+                write!(file, "{},\n", key)?;
             }
 
-            object_def.add_property(TypeDefinitionProperty {
-                name: "routeParams".to_owned(),
-                optional: false,
-                prop_type: MortarTypeOrAnon::Anon(route_params),
-            });
+            write!(file, "}}:{}", &action_request.name)?;
         }
 
-        if !endpoint.query_params.is_empty() {
-            let mut query_params = AnonymousTypeDefinition::new();
+        write!(file, ") => ")?;
 
-            for query_param in &endpoint.query_params {
-                let mut key = query_param.name.clone();
-                ensure_camel_case(&mut key);
-                self.imports.track_type(query_param.schema.clone());
-                query_params.add_property(TypeDefinitionProperty {
-                    name: key,
-                    optional: false,
-                    prop_type: MortarTypeOrAnon::Type(query_param.schema.clone()),
-                });
+        let write_optional = |file: &mut String, key: &str| -> anyhow::Result<()> {
+            if action_request.contains_property(key) {
+                write!(file, "{},", key)?;
+            } else {
+                write!(file, "undefined,")?;
             }
 
-            object_def.add_property(TypeDefinitionProperty {
-                name: "queryParams".to_owned(),
-                optional: false,
-                prop_type: MortarTypeOrAnon::Anon(query_params),
-            });
-        }
+            Ok(())
+        };
 
-        if let Some(req) = &endpoint.request {
-            self.imports.track_type(req.clone());
-            object_def.add_property(TypeDefinitionProperty {
-                name: "request".to_owned(),
-                optional: false,
-                prop_type: MortarTypeOrAnon::Type(req.clone()),
-            });
-        }
+        match &endpoint.endpoint_type {
+            EndpointType::Get => {
+                writeln!(
+                    file,
+                    "apiGet<{}>(\"{}\" as \"{}\", `{}`,",
+                    return_type, &action_type, &action_type, formatted_route
+                )?;
+                write_optional(&mut file, "queryParams")?;
+                write_optional(&mut file, "options")?;
+                writeln!(file, ");")?;
+            }
+            _ => {
+                writeln!(
+                    file,
+                    "api{}<{}>(\"{}\" as \"{}\",`{}`,",
+                    match &endpoint.endpoint_type {
+                        EndpointType::Post => "Post",
+                        EndpointType::Put => "Put",
+                        EndpointType::Delete => "Delete",
+                        _ => Err(anyhow!(
+                            "Unknown endpoint type {:?}",
+                            endpoint.endpoint_type
+                        ))?,
+                    },
+                    &return_type,
+                    &action_type,
+                    &action_type,
+                    &formatted_route
+                )?;
+                write_optional(&mut file, "request")?;
+                write_optional(&mut file, "options")?;
+                writeln!(file, ");")?;
+            }
+        };
 
-        Ok(object_def)
+        writeln!(file, "\n")?;
     }
 
-    pub fn create_action_request_name(endpoint: &MortarEndpoint) -> String {
-        let mut action_request_name = endpoint.action_name.clone();
-        ensure_pascal_case(&mut action_request_name);
-        action_request_name.push_str("ActionRequest");
+    let mut import_header = String::with_capacity(10 * 1024);
 
-        action_request_name
-    }
+    imports
+        .write_imports(&mut import_header, &resolver)
+        .context("Failed to generate imports")?;
 
-    pub fn generate(&mut self) -> anyhow::Result<String> {
+    let default_imports =
+        "import {apiGet, apiPost, apiDelete, apiPut, ApiRequestOptions} from 'cinnamon';";
+
+    let file = format!(
+        "// Auto Generated file, do not modify\n{}\n{}\n\n{}\n",
+        default_imports, import_header, file
+    );
+
+    return Ok(file);
+}
+
+pub fn create_type_files(
+    types: Vec<MortarConcreteType>,
+    resolver: &SchemaResolver,
+) -> anyhow::Result<Vec<TypeFileCollection>> {
+    let mut results = Vec::with_capacity(24);
+    // use into group map
+    let map = types
+        .into_iter()
+        .map(|t| (get_concrete_type_path(&t), t))
+        .into_group_map();
+
+    for (path, types) in map {
+        let mut imports = ImportTracker::new();
+
         let mut file = String::with_capacity(1024 * 1024);
 
-        // todo drain rather than clone
-        for endpoint in self
-            .module
-            .endpoints
-            .clone()
-            .into_iter()
-            .sorted_by(|a, b| a.path.cmp(&b.path))
-        {
-            let formatted_route = endpoint.path.replace("{", "${routeParams.");
+        for concrete in types {
+            let named_definition = concrete_type_to_named_definition(concrete, &mut imports);
 
-            let mut action_request = self.make_action_request(&endpoint)?;
-
-            let action_type = format!("{}/{}", &self.module.name, endpoint.action_name);
-
-            let return_type = endpoint
-                .response
-                .as_ref()
-                .map(|r| {
-                    self.imports.track_type(r.clone());
-                    r.to_type_string(&self.resolver)
-                })
-                .unwrap_or("void".to_owned());
-
-            action_request.add_property(TypeDefinitionProperty {
-                name: "options".to_string(),
-                optional: true,
-                prop_type: MortarTypeOrAnon::BlackBox(format!(
-                    "Partial<ApiRequestOptions<{}, \"{}\">>",
-                    &return_type, &action_type
-                )),
-            });
-
-            // TODO start the process of writing this out to disk
-            // TODO start the code gen for request/view emittion
-            // Reminder use the reco branch `feature/mortar`
-
-            // no more mutating
-            let action_request = NamedTypeDefinition {
-                def: action_request,
-                name: ModuleCodeGenerator::create_action_request_name(&endpoint),
-            };
-
-            if !action_request.is_empty() {
-                action_request.write_structure_to_file(&mut file, &self.resolver)?;
-                writeln!(file, "\n")?;
-            }
-
-            writeln!(file, "export const {} = (", endpoint.action_name)?;
-
-            if !action_request.is_empty() {
-                write!(file, "{{")?;
-                for key in action_request.def.properties.iter().map(|p| &p.name) {
-                    write!(file, "{},\n", key)?;
-                }
-
-                write!(file, "}}:{}", &action_request.name)?;
-            }
-
-            write!(file, ") => ")?;
-
-            let write_optional = |file: &mut String, key: &str| -> anyhow::Result<()> {
-                if action_request.contains_property(key) {
-                    write!(file, "{},", key)?;
-                } else {
-                    write!(file, "undefined,")?;
-                }
-
-                Ok(())
-            };
-
-            match &endpoint.endpoint_type {
-                EndpointType::Get => {
-                    writeln!(
-                        file,
-                        "apiGet<{}>(\"{}\" as \"{}\", `{}`,",
-                        return_type, &action_type, &action_type, formatted_route
-                    )?;
-                    write_optional(&mut file, "queryParams")?;
-                    write_optional(&mut file, "options")?;
-                    writeln!(file, ");")?;
-                }
-                _ => {
-                    writeln!(
-                        file,
-                        "api{}<{}>(\"{}\" as \"{}\",`{}`,",
-                        match &endpoint.endpoint_type {
-                            EndpointType::Post => "Post",
-                            EndpointType::Put => "Put",
-                            EndpointType::Delete => "Delete",
-                            _ => Err(anyhow!(
-                                "Unknown endpoint type {:?}",
-                                endpoint.endpoint_type
-                            ))?,
-                        },
-                        &return_type,
-                        &action_type,
-                        &action_type,
-                        &formatted_route
-                    )?;
-                    write_optional(&mut file, "request")?;
-                    write_optional(&mut file, "options")?;
-                    writeln!(file, ");")?;
-                }
-            };
-
-            writeln!(file, "\n")?;
+            named_definition.write_structure_to_file(&mut file, resolver)?;
         }
 
         let mut import_header = String::with_capacity(10 * 1024);
 
-        // println!("{}", &file);
-
-        self.imports
-            .write_imports(&mut import_header, &self.resolver)
+        imports
+            .write_imports(&mut import_header, &resolver)
             .context("Failed to generate imports")?;
 
-        let default_imports =
-            "import {apiGet, apiPost, apiDelete, apiPut, ApiRequestOptions} from 'cinnamon';";
-
         let file = format!(
-            "// Auto Generated file, do not modify\n{}\n{}\n\n{}\n",
-            default_imports, import_header, file
+            "// Auto Generated file, do not modify\n{}\n\n{}\n",
+            import_header, file
         );
 
-        return Ok(file);
+        results.push(TypeFileCollection { path, source: file })
     }
+
+    Ok(results)
+}
+
+fn concrete_type_to_named_definition(
+    concrete: MortarConcreteType,
+    imports: &mut ImportTracker,
+) -> NamedTypeDefinition {
+    let MortarConcreteType {
+        type_name,
+        data,
+        generic_arguments,
+        ..
+    } = concrete;
+
+    let mut def = NamedTypeDefinition {
+        name: type_name,
+        def: AnonymousTypeDefinition::new(),
+    };
+
+    match data {
+        MortarConcreteTypeType::Enum(_) => {
+            // todo enums
+        }
+        MortarConcreteTypeType::Obj { properties } => {
+            for (prop, mortar_type) in properties {
+                imports.track_type(mortar_type.clone());
+                def.def.add_property(TypeDefinitionProperty {
+                    name: prop,
+                    // Todo how to handle optional types
+                    optional: false,
+                    prop_type: MortarTypeOrAnon::Type(mortar_type),
+                });
+            }
+        }
+    };
+
+    def
+}
+
+pub struct TypeFileCollection {
+    pub source: String,
+    pub path: String,
 }

@@ -41,13 +41,14 @@ async fn main() -> anyhow::Result<()> {
         modules, schemas, ..
     } = parser;
 
+    let schemas_to_generate = schemas.values().cloned().collect::<Vec<_>>();
+
     let resolver = Rc::new(module_codegen::SchemaResolver::new(schemas));
 
     for (_path, module) in modules.into_iter().take(1) {
         // println!("{:?}\n\n", module);
-        let mut gen = module_codegen::ModuleCodeGenerator::new(module, resolver.clone());
 
-        let bad_code = gen.generate()?;
+        let bad_code = module_codegen::generate_actions_file(module, resolver.clone())?;
 
         let result = formatter
             .format(&bad_code)
@@ -61,6 +62,12 @@ async fn main() -> anyhow::Result<()> {
                 println!("{}", file);
             }
         }
+    }
+
+    let type_files = module_codegen::create_type_files(schemas_to_generate, &resolver)?;
+
+    for file in type_files {
+        println!("{}:\n{}\n\n", file.path, file.source);
     }
 
     Ok(())
