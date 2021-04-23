@@ -5,7 +5,6 @@ use crate::{
     string_tools::{ensure_camel_case, ensure_pascal_case},
 };
 use anyhow::{anyhow, Context};
-use serde_json::json;
 use std::{
     collections::{HashMap, HashSet},
     fmt::Write,
@@ -131,6 +130,103 @@ impl SchemaResolver {
     }
 }
 
+pub struct NamedTypeDefinition {
+    pub name: String,
+    pub def: AnonymousTypeDefinition,
+}
+
+impl NamedTypeDefinition {
+    pub fn is_empty(&self) -> bool {
+        self.def.properties.is_empty()
+    }
+
+    pub fn write_structure_to_file(
+        &self,
+        file: &mut String,
+        resolver: &SchemaResolver,
+    ) -> anyhow::Result<()> {
+        write!(file, "export interface {} ", self.name)?;
+
+        self.def.write_structure_to_file(file, resolver)?;
+
+        write!(file, ";\n")?;
+
+        Ok(())
+    }
+
+    pub fn contains_property(&self, prop: &str) -> bool {
+        self.def.properties.iter().any(|x| x.name == prop)
+    }
+}
+
+pub struct AnonymousTypeDefinition {
+    properties: Vec<TypeDefinitionProperty>,
+}
+
+impl AnonymousTypeDefinition {
+    pub fn new() -> Self {
+        AnonymousTypeDefinition {
+            properties: Vec::new(),
+        }
+    }
+
+    pub fn add_property(&mut self, param_property: TypeDefinitionProperty) {
+        self.properties.push(param_property);
+    }
+
+    pub fn write_structure_to_file(
+        &self,
+        file: &mut String,
+        resolver: &SchemaResolver,
+    ) -> anyhow::Result<()> {
+        write!(file, "{{")?;
+
+        for prop in &self.properties {
+            prop.write_property_to_file(file, resolver)?;
+        }
+
+        write!(file, "}}")?;
+
+        // write!(file, "{{")
+
+        Ok(())
+    }
+}
+
+pub struct TypeDefinitionProperty {
+    pub name: String,
+    pub optional: bool,
+    pub prop_type: MortarTypeOrAnon,
+}
+
+impl TypeDefinitionProperty {
+    pub fn write_property_to_file(
+        &self,
+        file: &mut String,
+        resolver: &SchemaResolver,
+    ) -> anyhow::Result<()> {
+        write!(file, "{}", self.name)?;
+
+        write!(file, "{}", if self.optional { "?: " } else { ": " })?;
+
+        match &self.prop_type {
+            MortarTypeOrAnon::BlackBox(s) => write!(file, "{}", s)?,
+            MortarTypeOrAnon::Type(s) => write!(file, "{}", s.to_type_string(resolver))?,
+            MortarTypeOrAnon::Anon(a) => a.write_structure_to_file(file, resolver)?,
+        };
+
+        write!(file, ";\n")?;
+
+        Ok(())
+    }
+}
+
+pub enum MortarTypeOrAnon {
+    Type(MortarType),
+    Anon(AnonymousTypeDefinition),
+    BlackBox(String),
+}
+
 pub struct ModuleCodeGenerator {
     module: MortarModule,
     resolver: Rc<SchemaResolver>,
@@ -149,78 +245,69 @@ impl ModuleCodeGenerator {
     fn make_action_request(
         &mut self,
         endpoint: &MortarEndpoint,
-    ) -> anyhow::Result<serde_json::Map<String, serde_json::Value>> {
-        let mut object_def = serde_json::Map::new();
+    ) -> anyhow::Result<AnonymousTypeDefinition> {
+        let mut object_def = AnonymousTypeDefinition::new();
 
         if !endpoint.route_params.is_empty() {
-            let mut route_params = serde_json::Map::new();
+            let mut route_params = AnonymousTypeDefinition::new();
 
             for route_param in &endpoint.route_params {
                 let mut key = route_param.name.clone();
                 ensure_camel_case(&mut key);
                 self.imports.track_type(route_param.schema.clone());
-                let type_str = route_param.schema.to_type_string(&self.resolver);
-                route_params.insert(key, serde_json::Value::String(type_str));
+                route_params.add_property(TypeDefinitionProperty {
+                    name: key,
+                    optional: false,
+                    prop_type: MortarTypeOrAnon::Type(route_param.schema.clone()),
+                });
             }
 
-            object_def.insert(
-                "routeParams".to_owned(),
-                serde_json::Value::Object(route_params),
-            );
+            object_def.add_property(TypeDefinitionProperty {
+                name: "routeParams".to_owned(),
+                optional: false,
+                prop_type: MortarTypeOrAnon::Anon(route_params),
+            });
         }
 
         if !endpoint.query_params.is_empty() {
-            let mut query_params = serde_json::Map::new();
+            let mut query_params = AnonymousTypeDefinition::new();
 
             for query_param in &endpoint.query_params {
                 let mut key = query_param.name.clone();
                 ensure_camel_case(&mut key);
                 self.imports.track_type(query_param.schema.clone());
-                let type_str = query_param.schema.to_type_string(&self.resolver);
-                query_params.insert(key, serde_json::Value::String(type_str));
+                query_params.add_property(TypeDefinitionProperty {
+                    name: key,
+                    optional: false,
+                    prop_type: MortarTypeOrAnon::Type(query_param.schema.clone()),
+                });
             }
 
-            object_def.insert(
-                "queryParams".to_owned(),
-                serde_json::Value::Object(query_params),
-            );
+            object_def.add_property(TypeDefinitionProperty {
+                name: "queryParams".to_owned(),
+                optional: false,
+                prop_type: MortarTypeOrAnon::Anon(query_params),
+            });
         }
 
         if let Some(req) = &endpoint.request {
             self.imports.track_type(req.clone());
-            object_def.insert(
-                "request".to_owned(),
-                serde_json::Value::String(req.to_type_string(&self.resolver)),
-            );
+            object_def.add_property(TypeDefinitionProperty {
+                name: "request".to_owned(),
+                optional: false,
+                prop_type: MortarTypeOrAnon::Type(req.clone()),
+            });
         }
 
         Ok(object_def)
     }
 
-    fn write_structure_to_file(
-        &self,
-        file: &mut String,
-        def: &serde_json::Value,
-    ) -> anyhow::Result<()> {
-        match def {
-            serde_json::Value::String(s) => write!(file, "{}", s)?,
-            // serde_json::Value::Bool(b) => write!(file, "\"{}\"", if *b { "true" } else { "false" })?,
-            serde_json::Value::Object(o) => {
-                write!(file, "{{")?;
-                for (key, val) in o {
-                    write!(file, "{}:", key)?;
-                    self.write_structure_to_file(file, val)?;
-                    write!(file, ";\n\n")?;
-                }
+    pub fn create_action_request_name(endpoint: &MortarEndpoint) -> String {
+        let mut action_request_name = endpoint.action_name.clone();
+        ensure_pascal_case(&mut action_request_name);
+        action_request_name.push_str("ActionRequest");
 
-                write!(file, "}}")?;
-            }
-            _ => Err(anyhow!("unhandled json type"))?,
-        };
-
-        // write!(file, "{{")
-
-        Ok(())
+        action_request_name
     }
 
     pub fn generate(&mut self) -> anyhow::Result<String> {
@@ -237,9 +324,7 @@ impl ModuleCodeGenerator {
             let formatted_route = endpoint.path.replace("{", "${routeParams.");
 
             let mut action_request = self.make_action_request(&endpoint)?;
-            let mut action_request_name = endpoint.action_name.clone();
-            ensure_pascal_case(&mut action_request_name);
-            action_request_name.push_str("ActionRequest");
+
             let action_type = format!("{}/{}", &self.module.name, endpoint.action_name);
 
             let return_type = endpoint
@@ -251,28 +336,27 @@ impl ModuleCodeGenerator {
                 })
                 .unwrap_or("void".to_owned());
 
-            // TODO going to need to make action_request its own type so it can express optionability e.g. this should be options?: Partial<_>
-            // TODO start the process of writing this out to disk
-            // TODO start the code gen for request/view emittion
-            // Reminder use the reco branch `feature/mortar`
-            action_request.insert(
-                "options".to_string(),
-                serde_json::Value::String(format!(
+            action_request.add_property(TypeDefinitionProperty {
+                name: "options".to_string(),
+                optional: true,
+                prop_type: MortarTypeOrAnon::BlackBox(format!(
                     "Partial<ApiRequestOptions<{}, \"{}\">>",
                     &return_type, &action_type
                 )),
-            );
+            });
+
+            // TODO start the process of writing this out to disk
+            // TODO start the code gen for request/view emittion
+            // Reminder use the reco branch `feature/mortar`
 
             // no more mutating
-            let action_request = action_request;
+            let action_request = NamedTypeDefinition {
+                def: action_request,
+                name: ModuleCodeGenerator::create_action_request_name(&endpoint),
+            };
 
             if !action_request.is_empty() {
-                write!(file, "export interface {}", &action_request_name)?;
-                self.write_structure_to_file(
-                    &mut file,
-                    &serde_json::Value::Object(action_request.clone()),
-                )?;
-
+                action_request.write_structure_to_file(&mut file, &self.resolver)?;
                 writeln!(file, "\n")?;
             }
 
@@ -280,17 +364,17 @@ impl ModuleCodeGenerator {
 
             if !action_request.is_empty() {
                 write!(file, "{{")?;
-                for key in action_request.keys() {
+                for key in action_request.def.properties.iter().map(|p| &p.name) {
                     write!(file, "{},\n", key)?;
                 }
 
-                write!(file, "}}:{}", &action_request_name)?;
+                write!(file, "}}:{}", &action_request.name)?;
             }
 
             write!(file, ") => ")?;
 
             let write_optional = |file: &mut String, key: &str| -> anyhow::Result<()> {
-                if action_request.contains_key(key) {
+                if action_request.contains_property(key) {
                     write!(file, "{},", key)?;
                 } else {
                     write!(file, "undefined,")?;
@@ -349,8 +433,7 @@ impl ModuleCodeGenerator {
             "import {apiGet, apiPost, apiDelete, apiPut, ApiRequestOptions} from 'cinnamon';";
 
         let file = format!(
-            "// Auto Generated file, do not modify
-            {}\n{}\n\n{}\n",
+            "// Auto Generated file, do not modify\n{}\n{}\n\n{}\n",
             default_imports, import_header, file
         );
 

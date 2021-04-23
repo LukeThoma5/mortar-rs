@@ -55,7 +55,7 @@ async fn main() -> anyhow::Result<()> {
 
         match result {
             Err(e) => {
-                println!("{:?}", e)
+                println!("{:?}\n{}", e, bad_code)
             }
             Ok(file) => {
                 println!("{}", file);
