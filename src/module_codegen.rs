@@ -1,4 +1,3 @@
-extern crate lazysort;
 use crate::{
     mortar_type::MortarType,
     parser::{
@@ -190,13 +189,13 @@ impl AnonymousTypeDefinition {
         file: &mut String,
         resolver: &SchemaResolver,
     ) -> anyhow::Result<()> {
-        write!(file, "{{")?;
+        write!(file, "{{\n")?;
 
         for prop in &self.properties {
             prop.write_property_to_file(file, resolver)?;
         }
 
-        write!(file, "}}")?;
+        write!(file, "\n}}")?;
 
         // write!(file, "{{")
 
@@ -457,6 +456,7 @@ pub fn create_type_files(
             let named_definition = concrete_type_to_named_definition(concrete, &mut imports);
 
             named_definition.write_structure_to_file(&mut file, resolver)?;
+            write!(file, "\n\n")?;
         }
 
         let mut import_header = String::with_capacity(10 * 1024);

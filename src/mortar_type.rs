@@ -8,6 +8,7 @@ pub enum MortarType {
     Bool,
     Uuid,
     DateTime,
+    Any,
     Array(Box<MortarType>),
     Reference(MortarTypeReference),
 }

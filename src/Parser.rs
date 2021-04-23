@@ -30,6 +30,7 @@ impl MortarType {
         // TODO make cow?
         match self {
             MortarType::I32 | MortarType::F32 => "number".into(),
+            MortarType::Any => "any".into(),
             MortarType::Bool => "boolean".into(),
             MortarType::Uuid | MortarType::DateTime | MortarType::Str => "string".into(),
             MortarType::Array(mt) => format!("{}[]", mt.to_type_string(resolver)),
@@ -58,8 +59,12 @@ impl MortarType {
                 (_, Some("int32")) => Self::I32,
                 (Some("boolean"), _) => Self::Bool,
                 (Some("float"), _) => Self::F32,
+                // TODO properly handle float vs double vs decimal
+                (Some("number"), _) => Self::F32,
                 (_, Some("uuid")) => Self::Uuid,
                 (Some("string"), _) => Self::Str,
+                // where we don't have any info e.g. its only typed as object in BE then give any type
+                (Some("object"), _) => Self::Any,
                 (Some("array"), _) => {
                     let items = value.get("items").expect("Array doesn't specify items");
 
@@ -190,10 +195,28 @@ impl SwaggerParser {
             .ok_or(anyhow!("Type doesn't include name"))?;
 
         let data = match subject.get("type").and_then(|v| v.as_str()) {
-            Some("object") => MortarConcreteTypeType::Obj {
-                properties: BTreeMap::new(),
-                // TODO map out the properties and start writing the code writing code
-            },
+            Some("object") => {
+                let props = subject.get("properties");
+
+                let mut properties = BTreeMap::new();
+
+                // dbg!("{:?}", &props);
+
+                if let Some(props) = props {
+                    for (prop_name, opts) in props
+                        .as_object()
+                        .with_context(|| format!("properties is not a map - {}", &type_ref.0))?
+                    {
+                        // todo should map out the nullable pop
+                        let type_name = MortarType::from_json(opts);
+                        properties.insert(prop_name.clone(), type_name);
+                    }
+                }
+
+                MortarConcreteTypeType::Obj {
+                    properties, // TODO map out the properties and start writing the code writing code
+                }
+            }
             Some("string") => {
                 let results = subject.get("enum").and_then(|v| v.as_array()).map(|o| {
                     o.iter()

@@ -66,8 +66,19 @@ async fn main() -> anyhow::Result<()> {
 
     let type_files = module_codegen::create_type_files(schemas_to_generate, &resolver)?;
 
-    for file in type_files {
-        println!("{}:\n{}\n\n", file.path, file.source);
+    for file in type_files.iter().take(5) {
+        let result = formatter
+            .format(&file.source)
+            .with_context(|| format!("Failed to format the module: {}\n", file.path));
+
+        match result {
+            Err(e) => {
+                println!("{:?}\n{}", e, file.source)
+            }
+            Ok(file) => {
+                println!("{}", file);
+            }
+        }
     }
 
     Ok(())
