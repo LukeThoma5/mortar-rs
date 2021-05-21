@@ -319,7 +319,11 @@ pub fn generate_actions_file(
         .into_iter()
         .sorted_by(|a, b| a.path.cmp(&b.path))
     {
-        let formatted_route = endpoint.path.replace("{", "${routeParams.");
+        let formatted_route = endpoint
+            .path
+            // Remove the initial slash
+            .as_str()[1..]
+            .replace("{", "${routeParams.");
 
         let mut action_request = make_action_request(&mut imports, &endpoint)?;
 
@@ -385,7 +389,7 @@ pub fn generate_actions_file(
             EndpointType::Get => {
                 writeln!(
                     file,
-                    "apiGet<{}>(\"{}\" as \"{}\", `{}`,",
+                    "apiGet<{}, \"{}\">(\"{}\", `{}`,",
                     return_type, &action_type, &action_type, formatted_route
                 )?;
                 write_optional(&mut file, "queryParams")?;
@@ -395,7 +399,7 @@ pub fn generate_actions_file(
             _ => {
                 writeln!(
                     file,
-                    "api{}<{}>(\"{}\" as \"{}\",`{}`,",
+                    "api{}<{}, \"{}\">(\"{}\",`{}`,",
                     match &endpoint.endpoint_type {
                         EndpointType::Post => "Post",
                         EndpointType::Put => "Put",
@@ -426,7 +430,7 @@ pub fn generate_actions_file(
         .context("Failed to generate imports")?;
 
     let default_imports =
-        "import {apiGet, apiPost, apiDelete, apiPut, ApiRequestOptions} from 'cinnamon';";
+        "import {apiGet, apiPost, apiDelete, apiPut, ApiRequestOptions} from '@redriver/cinnamon';";
 
     let file = format!(
         "// Auto Generated file, do not modify\n{}\n{}\n\n{}\n",
