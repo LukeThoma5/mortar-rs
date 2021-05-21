@@ -70,9 +70,12 @@ impl SwaggerApi {
             .get(endpoint)
             .send()
             .await
-            .context("Api call to gallery failed")?;
+            .context("Api call to swagger.json endpoint failed")?;
 
-        let result = response.json::<Swagger>().await?;
+        let result = response
+            .json::<Swagger>()
+            .await
+            .context("Failed to deserialise swagger.json")?;
 
         Ok(result)
     }
