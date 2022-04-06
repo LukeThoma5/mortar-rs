@@ -23,7 +23,7 @@ pub struct ImportTracker {
 }
 
 fn get_concrete_type_path(t: &MortarConcreteType) -> String {
-    let path = format!("~mortar/{}", t.namespace.clone().join("/"));
+    let path = format!("mortar/{}", t.namespace.clone().join("/"));
 
     path
 }

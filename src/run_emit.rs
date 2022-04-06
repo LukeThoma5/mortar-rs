@@ -60,8 +60,8 @@ pub async fn run_emit(swagger_api: &SwaggerApi, settings: &Settings) -> anyhow::
     let type_files = module_codegen::create_type_files(schemas_to_generate, &resolver)?;
 
     for source_file in type_files.iter() {
-        // Remove ~mortar/
-        let file_path_from_root = &source_file.path.as_str()[8..];
+        // Remove mortar/
+        let file_path_from_root = &source_file.path.as_str()[7..];
         let file_path = output_root.join(format!("{}.ts", file_path_from_root));
 
         let result = formatter

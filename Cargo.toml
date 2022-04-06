@@ -11,10 +11,11 @@ edition = "2018"
 [dependencies]
 itertools = "0.8.0"
 anyhow = "1.0"
-reqwest = { version = "0.10", features = ["json"] }
-tokio = { version = "0.2", features = ["full"] }
-futures = "0.3.4"
+reqwest = { version = "0.11", features = ["json"] }
+tokio = { version = "1.17", features = ["full", "time"] }
+futures = "0.3.21"
 config = "0.9"
+clap = { version = "3.1.8", features = ["derive"] }
 dprint-plugin-typescript = {version = "0.40.2", path = "./dprint-plugin-typescript"}
 
 serde = { version = "1.0.89", features = ["derive"] }

@@ -1,13 +1,13 @@
-use config::{ConfigError};
+use config::ConfigError;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     pub debug: bool,
     pub swagger_endpoint: String,
-    pub output_dir: String
+    pub mortar_endpoint: String,
+    pub output_dir: String,
 }
-
 
 impl Settings {
     pub fn new() -> Result<Self, ConfigError> {

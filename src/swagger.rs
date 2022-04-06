@@ -1,7 +1,6 @@
 use anyhow::Context;
 use serde::{Deserialize, Deserializer};
 use std::collections::{BTreeMap, HashMap};
-use tokio::prelude::*;
 
 #[derive(Deserialize, Debug)]
 pub struct Swagger {
@@ -78,5 +77,29 @@ impl SwaggerApi {
             .context("Failed to deserialise swagger.json")?;
 
         Ok(result)
+    }
+
+    pub async fn get_current_build_id(
+        &self,
+        endpoint: &str,
+        id: Option<&str>,
+    ) -> anyhow::Result<String> {
+        let mut request = self.client.get(endpoint);
+
+        if let Some(id) = id {
+            request = request.query(&[("lastSeenId", id)]);
+        }
+        let response = request
+            .send()
+            .await
+            .context("Api call to swagger.json endpoint failed")?;
+
+        match response.error_for_status() {
+            Ok(response) => Ok(response
+                .text()
+                .await
+                .context("Failed to deserialise guid")?),
+            Err(e) => Err(e).context("error code returned from BE"),
+        }
     }
 }
