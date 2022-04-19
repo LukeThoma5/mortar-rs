@@ -56,7 +56,7 @@ impl MortarType {
                 value.get("format").and_then(|x| x.as_str()),
             ) {
                 (Some("date-time"), _) => Self::DateTime,
-                (_, Some("int32")) => Self::I32,
+                (_, Some("int32") | Some("int64")) => Self::I32,
                 (Some("boolean"), _) => Self::Bool,
                 (Some("float"), _) => Self::F32,
                 // TODO properly handle float vs double vs decimal
