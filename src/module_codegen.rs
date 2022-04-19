@@ -6,7 +6,7 @@ use crate::{
     },
     string_tools::{ensure_camel_case, ensure_pascal_case},
 };
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, Context, Error};
 use std::{
     collections::{HashMap, HashSet},
     fmt::Write,
@@ -456,11 +456,33 @@ pub fn create_type_files(
 
         let mut file = String::with_capacity(1024 * 1024);
 
-        for concrete in types {
-            let named_definition = concrete_type_to_named_definition(concrete, &mut imports);
+        let mut handled_paged_view = false;
 
-            named_definition.write_structure_to_file(&mut file, resolver)?;
-            write!(file, "\n\n")?;
+        for concrete in types {
+            if concrete.generic_arguments.is_empty() {
+                let named_definition = concrete_type_to_named_definition(concrete, &mut imports);
+
+                named_definition.write_structure_to_file(&mut file, resolver)?;
+                write!(file, "\n\n")?;
+            } else if concrete.type_name == "PagedView" {
+                if !handled_paged_view {
+                    write!(
+                        file,
+                        "\nexport interface PagedView<T> {{
+                        results: T[];
+                        totalResults: number;
+                    }}\n"
+                    )?;
+                    handled_paged_view = true;
+                }
+            } else {
+                // TODO handle generics properly. Will require extra information from saffron to know what fields use the generic
+                // as opposed to just happening to be the same as the generic.
+                return Err(anyhow!(
+                    "Interface includes generic type '{}'. Only PagedView is supported at present",
+                    &concrete.type_name
+                ));
+            }
         }
 
         let mut import_header = String::with_capacity(10 * 1024);
@@ -490,7 +512,6 @@ fn concrete_type_to_named_definition(
         generic_arguments,
         ..
     } = concrete;
-
     let mut def = NamedTypeDefinition {
         name: type_name,
         def: AnonymousTypeDefinition::new(),
