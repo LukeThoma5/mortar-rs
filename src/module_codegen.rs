@@ -347,10 +347,6 @@ pub fn generate_actions_file(
             )),
         });
 
-        // TODO start the process of writing this out to disk
-        // TODO start the code gen for request/view emittion
-        // Reminder use the reco branch `feature/mortar`
-
         // no more mutating
         let action_request = NamedTypeDefinition {
             def: action_request,
@@ -371,6 +367,11 @@ pub fn generate_actions_file(
             }
 
             write!(file, "}}:{}", &action_request.name)?;
+        }
+
+        if action_request.def.properties.iter().all(|t| t.optional) {
+            // For get requests where there is no body, make sure you don't have to specify anything.
+            write!(file, " = {{ }}")?;
         }
 
         write!(file, ") => ")?;
@@ -415,7 +416,14 @@ pub fn generate_actions_file(
                     &formatted_route
                 )?;
                 write_optional(&mut file, "request")?;
-                write_optional(&mut file, "options")?;
+                if action_request.contains_property("queryParams")
+                    && action_request.contains_property("options")
+                {
+                    // Where a delete endpoint etc make sure that query params that should have been route params are being used.
+                    write!(file, "{{params: queryParams, ...options}},")?;
+                } else {
+                    write_optional(&mut file, "options")?;
+                }
                 writeln!(file, ");")?;
             }
         };
@@ -430,7 +438,7 @@ pub fn generate_actions_file(
         .context("Failed to generate imports")?;
 
     let default_imports =
-        "import {apiGet, apiPost, apiDelete, apiPut, ApiRequestOptions} from '@redriver/cinnamon';";
+        "import {apiGet, apiPost, apiDelete, apiPut, ApiRequestOptions} from '@redriver/cinnamon-mui';";
 
     let file = format!(
         "// Auto Generated file, do not modify\n{}\n{}\n\n{}\n",

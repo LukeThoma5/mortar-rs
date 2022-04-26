@@ -352,8 +352,6 @@ impl SwaggerParser {
             }
         }
 
-        // TODO parse the interfaces we will need
-        // TODO figure out how to get a good name for the action creator (e.g. the endpoint name?)
         module.endpoints.push(mortar_endpoint);
 
         Ok(())
