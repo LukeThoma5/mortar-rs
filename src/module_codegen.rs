@@ -47,10 +47,17 @@ impl ImportTracker {
         &mut self,
         file: &mut String,
         resolver: &SchemaResolver,
+        file_path: Option<&str>,
     ) -> anyhow::Result<()> {
         let import_map = self.emit_imports(resolver);
 
-        for (path, imports) in import_map {
+        for (path, imports) in import_map.into_iter().sorted_by(|a, b| a.0.cmp(&b.0)) {
+            match file_path {
+                // Don't import from yourself
+                Some(p) if p == path => continue,
+                _ => {}
+            };
+
             write!(file, "import {{")?;
             for import in imports {
                 write!(file, "{},", import)?;
@@ -434,7 +441,7 @@ pub fn generate_actions_file(
     let mut import_header = String::with_capacity(10 * 1024);
 
     imports
-        .write_imports(&mut import_header, &resolver)
+        .write_imports(&mut import_header, &resolver, None)
         .context("Failed to generate imports")?;
 
     let default_imports =
@@ -466,7 +473,10 @@ pub fn create_type_files(
 
         let mut handled_paged_view = false;
 
-        for concrete in types {
+        for concrete in types
+            .into_iter()
+            .sorted_by(|a, b| a.type_name.cmp(&b.type_name))
+        {
             if concrete.generic_arguments.is_empty() {
                 let named_definition = concrete_type_to_named_definition(concrete, &mut imports);
 
@@ -496,7 +506,7 @@ pub fn create_type_files(
         let mut import_header = String::with_capacity(10 * 1024);
 
         imports
-            .write_imports(&mut import_header, &resolver)
+            .write_imports(&mut import_header, &resolver, Some(&path))
             .context("Failed to generate imports")?;
 
         let file = format!(
