@@ -147,9 +147,42 @@ impl SchemaResolver {
     }
 }
 
+pub enum NamedTypeDefinitionDefinition {
+    Anon(AnonymousTypeDefinition),
+    Enum,
+}
+
 pub struct NamedTypeDefinition {
     pub name: String,
     pub def: AnonymousTypeDefinition,
+}
+
+pub struct WriteableTypeDefinition {
+    pub name: String,
+    pub def: NamedTypeDefinitionDefinition,
+}
+
+impl WriteableTypeDefinition {
+    pub fn write_structure_to_file(
+        &self,
+        file: &mut String,
+        resolver: &SchemaResolver,
+    ) -> anyhow::Result<()> {
+        match &self.def {
+            NamedTypeDefinitionDefinition::Anon(def) => {
+                write!(file, "export interface {} ", self.name)?;
+
+                def.write_structure_to_file(file, resolver)?;
+
+                write!(file, ";\n")?;
+            }
+            NamedTypeDefinitionDefinition::Enum => {
+                write!(file, "export type {} = string;\n", self.name)?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl NamedTypeDefinition {
@@ -318,6 +351,9 @@ pub fn generate_actions_file(
 ) -> anyhow::Result<String> {
     let mut imports = ImportTracker::new();
     let mut file = String::with_capacity(1024 * 1024);
+
+    // TODO create an ActionTypes object that tracks all the action_types for easier use in redux.
+    // https://rrsoftware.slack.com/archives/DMZSQ9WMD/p1657096803475849
 
     // todo drain rather than clone
     for endpoint in module
@@ -523,36 +559,57 @@ pub fn create_type_files(
 fn concrete_type_to_named_definition(
     concrete: MortarConcreteType,
     imports: &mut ImportTracker,
-) -> NamedTypeDefinition {
+) -> WriteableTypeDefinition {
     let MortarConcreteType {
         type_name,
         data,
         generic_arguments,
         ..
     } = concrete;
-    let mut def = NamedTypeDefinition {
-        name: type_name,
-        def: AnonymousTypeDefinition::new(),
-    };
 
-    match data {
+    let def = match data {
         MortarConcreteTypeType::Enum(_) => {
             // todo enums
+            // make the namedTypeDefinition say if its interface/class
+            // make the def be either an anonymous type definition or a set of properties.
+            // https://bobbyhadz.com/blog/typescript-create-type-from-object-values
+            // create a const object literal and then use
+            /*
+                        const employee = {
+              id: 1,
+              name: 'James Doe',
+              salary: 100,
+            } as const; // 👈️ use const assertion
+
+            // 👇️ type Keys = "id" | "name" | "salary"
+            type Keys = keyof typeof employee;
+
+            // 👇️ type Values = 1 | "James Doe" | 100
+            type Values = typeof employee[Keys];
+
+                        */
+            NamedTypeDefinitionDefinition::Enum
         }
         MortarConcreteTypeType::Obj { properties } => {
+            let mut def = AnonymousTypeDefinition::new();
             for (prop, mortar_type) in properties {
                 imports.track_type(mortar_type.clone());
-                def.def.add_property(TypeDefinitionProperty {
+                def.add_property(TypeDefinitionProperty {
                     name: prop,
                     // Todo how to handle optional types
                     optional: false,
                     prop_type: MortarTypeOrAnon::Type(mortar_type),
                 });
             }
+
+            NamedTypeDefinitionDefinition::Anon(def)
         }
     };
 
-    def
+    WriteableTypeDefinition {
+        name: type_name,
+        def,
+    }
 }
 
 pub struct TypeFileCollection {
