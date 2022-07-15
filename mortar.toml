@@ -2,3 +2,4 @@ debug = false
 swagger_endpoint = "http://localhost:5000/api/swagger.json"
 mortar_endpoint = "http://localhost:5000/mortar/buildId"
 output_dir = "./output"
+prevent_update = false

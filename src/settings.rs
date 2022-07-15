@@ -7,6 +7,7 @@ pub struct Settings {
     pub swagger_endpoint: String,
     pub mortar_endpoint: String,
     pub output_dir: String,
+    pub prevent_update: bool,
 }
 
 impl Settings {

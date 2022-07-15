@@ -1,6 +1,6 @@
 [package]
 name = "mortar"
-version = "0.1.0"
+version = "0.0.5"
 authors = ["LukeThoma5 <luke.4man@btinternet.com>"]
 edition = "2018"
 
@@ -17,6 +17,7 @@ futures = "0.3.21"
 config = "0.9"
 clap = { version = "3.1.8", features = ["derive"] }
 dprint-plugin-typescript = {version = "0.40.2", path = "./dprint-plugin-typescript"}
+self_update = "0.30.0"
 
 serde = { version = "1.0.89", features = ["derive"] }
 serde_derive = "1.0.89"
