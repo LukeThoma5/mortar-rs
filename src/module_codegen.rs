@@ -530,12 +530,10 @@ pub fn create_type_files(
                     handled_paged_view = true;
                 }
             } else {
+                eprintln!("Processing {}, Interface includes generic type '{}'. Only PagedView is supported at present", &path,
+                &concrete.type_name);
                 // TODO handle generics properly. Will require extra information from saffron to know what fields use the generic
                 // as opposed to just happening to be the same as the generic.
-                return Err(anyhow!(
-                    "Interface includes generic type '{}'. Only PagedView is supported at present",
-                    &concrete.type_name
-                ));
             }
         }
 

@@ -4,10 +4,12 @@ mod mortar_type;
 mod string_tools;
 mod swagger;
 use anyhow::Context;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{collections::HashMap, rc::Rc};
+use tokio::fs;
+use tokio::io::AsyncReadExt;
 
 mod parser;
 mod run_emit;
@@ -26,6 +28,9 @@ use self_update::cargo_crate_version;
 struct Args {
     #[clap(short, long)]
     watch: bool,
+
+    #[clap(long)]
+    swagger_file: Option<PathBuf>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -51,13 +56,17 @@ fn main() -> anyhow::Result<()> {
         .build()
         .unwrap()
         .block_on(async {
-            loop {
-                block_on_matching_build_id(&mut last_build_id, &swagger_api, &settings).await;
-                println!("Running emit");
-                run_emit::run_emit(&swagger_api, &settings).await?;
+            if let Some(fp) = args.swagger_file {
+                run_emit_from_file(&fp, &settings).await?;
+            } else {
+                loop {
+                    block_on_matching_build_id(&mut last_build_id, &swagger_api, &settings).await;
+                    println!("Running emit");
+                    run_emit::run_emit(&swagger_api, &settings).await?;
 
-                if !args.watch {
-                    break;
+                    if !args.watch {
+                        break;
+                    }
                 }
             }
 
@@ -129,4 +138,19 @@ async fn block_on_matching_build_id(
             }
         }
     }
+}
+
+pub async fn run_emit_from_file(path: &std::path::Path, settings: &Settings) -> anyhow::Result<()> {
+    let mut string = String::new();
+    fs::File::open(path)
+        .await?
+        .read_to_string(&mut string)
+        .await?;
+
+    let swagger: swagger::Swagger =
+        serde_json::from_str(&string).expect("file should be proper JSON");
+
+    run_emit::run_emit_from_swagger(swagger, &settings).await?;
+
+    Ok(())
 }

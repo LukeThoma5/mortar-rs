@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{collections::HashMap, rc::Rc};
 
+use crate::swagger::Swagger;
 use crate::{
     formatter, module_codegen, parser::SwaggerParser, settings::Settings, swagger::SwaggerApi,
 };
@@ -10,11 +11,7 @@ use crate::{
 use tokio::fs::{create_dir_all, File};
 use tokio::io::AsyncWriteExt;
 
-pub async fn run_emit(swagger_api: &SwaggerApi, settings: &Settings) -> anyhow::Result<()> {
-    let swagger = swagger_api
-        .get_swagger_info(&settings.swagger_endpoint)
-        .await?;
-
+pub async fn run_emit_from_swagger(swagger: Swagger, settings: &Settings) -> anyhow::Result<()> {
     let mut parser = SwaggerParser::new(swagger);
 
     parser.parse_swagger().context("Failed to parse swagger")?;
@@ -87,4 +84,12 @@ pub async fn run_emit(swagger_api: &SwaggerApi, settings: &Settings) -> anyhow::
     }
 
     Ok(())
+}
+
+pub async fn run_emit(swagger_api: &SwaggerApi, settings: &Settings) -> anyhow::Result<()> {
+    let swagger = swagger_api
+        .get_swagger_info(&settings.swagger_endpoint)
+        .await?;
+
+    run_emit_from_swagger(swagger, settings).await
 }
