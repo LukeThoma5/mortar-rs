@@ -3,10 +3,12 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
+    #[serde(default)]
     pub debug: bool,
     pub swagger_endpoint: String,
     pub mortar_endpoint: String,
     pub output_dir: String,
+    #[serde(default)]
     pub prevent_update: bool,
 }
 

@@ -122,8 +122,8 @@ async fn block_on_matching_build_id(
                     }
                 }
             }
-            _ => {
-                dbg!("Request for build id failed");
+            Err(err) => {
+                eprintln!("Failed to contact saffron backend build-id endpoint. Is your BE running? Is saffron up to date?. Error:\n{:?}", err);
                 sleep(Duration::from_millis(1000)).await;
                 continue;
             }
