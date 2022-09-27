@@ -79,6 +79,16 @@ impl MortarType {
             }
         }
     }
+
+    pub fn from_generic(value: String) -> Self {
+        if let Some(mini) = value.strip_suffix("[]") {
+            MortarType::Array(Box::new(MortarType::Reference(MortarTypeReference(
+                mini.to_owned(),
+            ))))
+        } else {
+            MortarType::Reference(MortarTypeReference(value))
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -119,7 +129,13 @@ pub struct MortarConcreteType {
     pub namespace: Vec<String>,
     pub type_name: String,
     pub data: MortarConcreteTypeType,
-    pub generic_arguments: Vec<MortarConcreteType>,
+    pub generics: Option<MortarGenericInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MortarGenericInfo {
+    pub generic_arguments: Vec<MortarType>,
+    pub generic_properties: BTreeMap<String, usize>,
 }
 
 impl SwaggerParser {
@@ -166,15 +182,15 @@ impl SwaggerParser {
     }
 
     fn parse_schema(&mut self, type_ref: MortarTypeReference) -> Result<MortarConcreteType> {
+        let mini_type_ref = type_ref
+            .0
+            .strip_prefix("#/components/schemas/")
+            .with_context(|| format!("Malformed mortar reference {}", &type_ref.0))?;
+
         let subject = self
             .components
             .schemas
-            .get(
-                type_ref
-                    .0
-                    .strip_prefix("#/components/schemas/")
-                    .with_context(|| format!("Malformed mortar reference {}", &type_ref.0))?,
-            )
+            .get(mini_type_ref)
             .with_context(|| format!("Failed to get schema {}", &type_ref.0))?;
 
         let root = subject.get("x-mtr");
@@ -233,28 +249,52 @@ impl SwaggerParser {
             a => Err(anyhow!("unknown type {:?}", a))?,
         };
 
-        let mut concrete = MortarConcreteType {
-            namespace,
-            type_name,
-            type_ref,
-            data,
-            generic_arguments: vec![],
-        };
+        let mut generic_arguments = None;
+        let mut generic_properties = None;
 
         if let Some(generic_args) = root
             .and_then(|v| v.get("ga"))
             .and_then(|v| v.as_array())
             .and_then(|v| {
                 v.iter()
-                    .map(|v| v.as_str().map(|s| MortarTypeReference(s.to_owned())))
-                    .collect::<Option<Vec<_>>>()
+                    .map(|v| v.as_str().map(|s| s.to_owned()))
+                    .collect::<Option<Vec<String>>>()
             })
         {
-            concrete.generic_arguments = generic_args
-                .into_iter()
-                .map(|r| self.parse_schema(r))
-                .collect::<Result<_>>()?;
+            generic_arguments = Some(
+                generic_args
+                    .into_iter()
+                    .map(MortarType::from_generic)
+                    .collect::<Vec<MortarType>>(),
+            );
         }
+
+        if let Some(generic_args) = root.and_then(|v| v.get("gm")).and_then(|v| v.as_object()) {
+            generic_properties = Some(
+                generic_args
+                    .iter()
+                    .map(|(prop, val)| (prop.to_owned(), val.as_u64().unwrap() as usize))
+                    .collect::<BTreeMap<String, usize>>(),
+            );
+        }
+
+        let generics = match (generic_arguments, generic_properties) {
+            (Some(generic_arguments), Some(generic_properties)) if generic_arguments.len() > 0 => {
+                Some(MortarGenericInfo {
+                    generic_arguments,
+                    generic_properties,
+                })
+            }
+            _ => None,
+        };
+
+        let mut concrete = MortarConcreteType {
+            namespace,
+            type_name,
+            type_ref,
+            data,
+            generics,
+        };
 
         self.schemas
             .insert(concrete.type_ref.clone(), concrete.clone());

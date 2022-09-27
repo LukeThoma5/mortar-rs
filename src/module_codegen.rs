@@ -74,10 +74,13 @@ impl ImportTracker {
 
         fn add_concrete_type(
             t: &MortarConcreteType,
+            resolver: &SchemaResolver,
             imports: &mut HashMap<String, HashSet<String>>,
         ) {
-            for generic in t.generic_arguments.clone() {
-                add_concrete_type(&generic, imports);
+            if let Some(generics) = &t.generics {
+                for generic in &generics.generic_arguments {
+                    add_type(generic, resolver, imports);
+                }
             }
 
             let path = get_concrete_type_path(t);
@@ -95,8 +98,11 @@ impl ImportTracker {
             match t {
                 MortarType::Array(arr_type) => add_type(&arr_type, resolver, imports),
                 MortarType::Reference(ref reference) => {
-                    let concrete_type = resolver.resolve_to_type(reference).unwrap();
-                    add_concrete_type(concrete_type, imports);
+                    let concrete_type = resolver
+                        .resolve_to_type(reference)
+                        .with_context(|| format!("Failed to resolve type {:?}", &reference))
+                        .unwrap();
+                    add_concrete_type(concrete_type, resolver, imports);
                 }
                 _ => {}
             }
@@ -114,14 +120,20 @@ pub struct SchemaResolver {
     pub schemas: HashMap<MortarTypeReference, MortarConcreteType>,
 }
 
-fn map_concrete_type(t: &MortarConcreteType) -> String {
+fn map_concrete_type(t: &MortarConcreteType, resolver: &SchemaResolver) -> String {
     let mut type_name = t.type_name.clone();
 
-    if t.generic_arguments.len() > 0 {
+    if let Some(generics) = &t.generics {
         type_name.push_str("<");
 
-        for generic_arg in &t.generic_arguments {
-            type_name.push_str(&map_concrete_type(generic_arg));
+        let len = generics.generic_arguments.len();
+
+        for (index, generic_arg) in generics.generic_arguments.iter().enumerate() {
+            let generic_type_name = generic_arg.to_type_string(resolver);
+            type_name.push_str(&generic_type_name);
+            if index + 1 < len {
+                type_name.push_str(", ");
+            }
         }
 
         type_name.push_str(">");
@@ -136,7 +148,9 @@ impl SchemaResolver {
     }
 
     pub fn resolve_to_type_name(&self, type_ref: &MortarTypeReference) -> Option<String> {
-        self.schemas.get(type_ref).map(map_concrete_type)
+        self.schemas
+            .get(type_ref)
+            .map(|s| map_concrete_type(s, self))
     }
 
     pub fn resolve_to_type<'a>(
@@ -507,34 +521,25 @@ pub fn create_type_files(
 
         let mut file = String::with_capacity(1024 * 1024);
 
-        let mut handled_paged_view = false;
+        let mut handled_generic_types = HashSet::new();
 
         for concrete in types
             .into_iter()
             .sorted_by(|a, b| a.type_name.cmp(&b.type_name))
         {
-            if concrete.generic_arguments.is_empty() {
-                let named_definition = concrete_type_to_named_definition(concrete, &mut imports);
-
-                named_definition.write_structure_to_file(&mut file, resolver)?;
-                write!(file, "\n\n")?;
-            } else if concrete.type_name == "PagedView" {
-                if !handled_paged_view {
-                    write!(
-                        file,
-                        "\nexport interface PagedView<T> {{
-                        results: T[];
-                        totalResults: number;
-                    }}\n"
-                    )?;
-                    handled_paged_view = true;
+            if concrete.generics.is_some() {
+                if handled_generic_types.contains(&concrete.type_name) {
+                    // Already handled this generic, don't do it again
+                    continue;
                 }
-            } else {
-                eprintln!("Processing {}, Interface includes generic type '{}'. Only PagedView is supported at present", &path,
-                &concrete.type_name);
-                // TODO handle generics properly. Will require extra information from saffron to know what fields use the generic
-                // as opposed to just happening to be the same as the generic.
+
+                handled_generic_types.insert(concrete.type_name.to_owned());
             }
+
+            let named_definition = concrete_type_to_named_definition(concrete, &mut imports);
+
+            named_definition.write_structure_to_file(&mut file, resolver)?;
+            write!(file, "\n\n")?;
         }
 
         let mut import_header = String::with_capacity(10 * 1024);
@@ -559,9 +564,9 @@ fn concrete_type_to_named_definition(
     imports: &mut ImportTracker,
 ) -> WriteableTypeDefinition {
     let MortarConcreteType {
-        type_name,
+        mut type_name,
         data,
-        generic_arguments,
+        generics,
         ..
     } = concrete;
 
@@ -592,17 +597,39 @@ fn concrete_type_to_named_definition(
             let mut def = AnonymousTypeDefinition::new();
             for (prop, mortar_type) in properties {
                 imports.track_type(mortar_type.clone());
+
+                let mut prop_type = MortarTypeOrAnon::Type(mortar_type);
+
+                if let Some(generics) = &generics {
+                    if let Some(generic_position) = generics.generic_properties.get(&prop) {
+                        prop_type = MortarTypeOrAnon::BlackBox(format!("T{}", generic_position))
+                    }
+                }
+
                 def.add_property(TypeDefinitionProperty {
                     name: prop,
                     // Todo how to handle optional types
                     optional: false,
-                    prop_type: MortarTypeOrAnon::Type(mortar_type),
+                    prop_type,
                 });
             }
 
             NamedTypeDefinitionDefinition::Anon(def)
         }
     };
+
+    if let Some(generics) = generics {
+        let len = generics.generic_arguments.len();
+
+        type_name.push('<');
+        for (generic_position, _) in generics.generic_arguments.iter().enumerate() {
+            type_name.push_str(&format!("T{}", generic_position));
+            if generic_position + 1 < len {
+                type_name.push_str(", ");
+            }
+        }
+        type_name.push('>');
+    }
 
     WriteableTypeDefinition {
         name: type_name,
