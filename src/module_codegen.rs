@@ -100,7 +100,7 @@ impl ImportTracker {
                 MortarType::Reference(ref reference) => {
                     let concrete_type = resolver
                         .resolve_to_type(reference)
-                        .with_context(|| format!("Failed to resolve type {:?}", &reference))
+                        .with_context(|| format!("Failed to resolve type reference {:?}. Is the type a c# built-in or generic? Maybe an issue with MortarType::from_generic", &reference))
                         .unwrap();
                     add_concrete_type(concrete_type, resolver, imports);
                 }

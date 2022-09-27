@@ -80,13 +80,27 @@ impl MortarType {
         }
     }
 
-    pub fn from_generic(value: String) -> Self {
+    pub fn from_generic(mut value: String) -> Self {
+        // This is parsing it from the `SwaggerSchemaGenerator.MakeSchemaIdForType` e.g. a different format than for usual properties
         if let Some(mini) = value.strip_suffix("[]") {
-            MortarType::Array(Box::new(MortarType::Reference(MortarTypeReference(
-                mini.to_owned(),
-            ))))
+            MortarType::Array(Box::new(MortarType::from_generic(mini.to_owned())))
         } else {
-            MortarType::Reference(MortarTypeReference(value))
+            // Remove nullable-ness. Todo encode null-ability in MortarType? Or a type that wraps it?
+            value = value.replace("Nullable__", "");
+            match value
+                .as_str()
+                .strip_prefix("#/components/schemas/")
+                .expect("Generic type in invalid format")
+            {
+                "String" => Self::Str,
+                "Boolean" => Self::Bool,
+                "Object" => Self::Any,
+                "DateTime" => Self::DateTime,
+                "Guid" => Self::Uuid,
+                "Decimal" | "Single" | "Double" => Self::F32,
+                _ if value.as_str().contains("Int") => Self::I32,
+                _ => MortarType::Reference(MortarTypeReference(value)),
+            }
         }
     }
 }
