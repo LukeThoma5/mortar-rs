@@ -59,7 +59,7 @@ impl ImportTracker {
             };
 
             write!(file, "import {{")?;
-            for import in imports {
+            for import in imports.into_iter().sorted_by(|a, b| a.cmp(&b)) {
                 write!(file, "{},", import)?;
             }
 
@@ -596,14 +596,25 @@ fn concrete_type_to_named_definition(
         MortarConcreteTypeType::Obj { properties } => {
             let mut def = AnonymousTypeDefinition::new();
             for (prop, mortar_type) in properties {
-                imports.track_type(mortar_type.clone());
-
+                let mortar_type_for_track = mortar_type.clone();
                 let mut prop_type = MortarTypeOrAnon::Type(mortar_type);
 
                 if let Some(generics) = &generics {
+                    dbg!(
+                        "The generics for {} prop {}, {:?}",
+                        &type_name,
+                        &prop,
+                        &generics
+                    );
                     if let Some(generic_position) = generics.generic_properties.get(&prop) {
                         prop_type = MortarTypeOrAnon::BlackBox(format!("T{}", generic_position))
+                    } else {
+                        // only track if not a generic prop
+                        imports.track_type(mortar_type_for_track);
                     }
+                } else {
+                    // only track if not a generic prop
+                    imports.track_type(mortar_type_for_track);
                 }
 
                 def.add_property(TypeDefinitionProperty {
