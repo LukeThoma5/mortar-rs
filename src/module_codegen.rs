@@ -1,13 +1,14 @@
 use crate::{
     mortar_type::MortarType,
     parser::{
-        EndpointType, MortarConcreteType, MortarConcreteTypeType, MortarEndpoint, MortarModule,
-        MortarTypeReference,
+        EndpointType, GenericParameterInfoType, MortarConcreteType, MortarConcreteTypeType,
+        MortarEndpoint, MortarModule, MortarTypeReference,
     },
     string_tools::{ensure_camel_case, ensure_pascal_case},
 };
 use anyhow::{anyhow, Context, Error};
 use std::{
+    any::type_name,
     collections::{HashMap, HashSet},
     fmt::Write,
     rc::Rc,
@@ -536,7 +537,8 @@ pub fn create_type_files(
                 handled_generic_types.insert(concrete.type_name.to_owned());
             }
 
-            let named_definition = concrete_type_to_named_definition(concrete, &mut imports);
+            let named_definition =
+                concrete_type_to_named_definition(concrete, &mut imports, resolver);
 
             named_definition.write_structure_to_file(&mut file, resolver)?;
             write!(file, "\n\n")?;
@@ -562,6 +564,7 @@ pub fn create_type_files(
 fn concrete_type_to_named_definition(
     concrete: MortarConcreteType,
     imports: &mut ImportTracker,
+    resolver: &SchemaResolver,
 ) -> WriteableTypeDefinition {
     let MortarConcreteType {
         mut type_name,
@@ -607,7 +610,16 @@ fn concrete_type_to_named_definition(
                         &generics
                     );
                     if let Some(generic_position) = generics.generic_properties.get(&prop) {
-                        prop_type = MortarTypeOrAnon::BlackBox(format!("T{}", generic_position))
+                        let mut buffer = String::new();
+                        write_nested_generic_name(
+                            generic_position,
+                            &mut buffer,
+                            &mortar_type_for_track,
+                            resolver,
+                        )
+                        .unwrap();
+                        println!("Buffer at the end {}", buffer);
+                        prop_type = MortarTypeOrAnon::BlackBox(buffer)
                     } else {
                         // only track if not a generic prop
                         imports.track_type(mortar_type_for_track);
@@ -646,6 +658,68 @@ fn concrete_type_to_named_definition(
         name: type_name,
         def,
     }
+}
+
+pub fn write_nested_generic_name(
+    info: &GenericParameterInfoType,
+    file: &mut String,
+    mortar_type: &MortarType,
+    resolver: &SchemaResolver,
+) -> anyhow::Result<()> {
+    let mut write_for_reference =
+        |r: &MortarTypeReference, items: &Vec<GenericParameterInfoType>| -> anyhow::Result<()> {
+            let t = resolver
+                .resolve_to_type(r)
+                .with_context(|| format!("Failed to resolve reference to a generic {:?}", r))?;
+            write!(file, "{}", &t.type_name)?;
+            let len = items.len();
+
+            if let Some(generics) = t.generics.as_ref() {
+                dbg!("Writing generics for {:?}", &t);
+                write!(file, "<")?;
+                // let op = t.generics.as_ref();
+
+                for (generic_position, (gen_arg, gen_arg_type)) in items
+                    .iter()
+                    .zip(generics.generic_arguments.iter())
+                    .enumerate()
+                {
+                    write_nested_generic_name(gen_arg, file, gen_arg_type, resolver)?;
+                    if generic_position + 1 < len {
+                        write!(file, ", ")?;
+                    }
+                }
+                write!(file, ">")?;
+            }
+
+            Ok(())
+        };
+
+    match info {
+        GenericParameterInfoType::GenericParamPosition(pos) => {
+            write!(file, "T{}", pos)?;
+        }
+        GenericParameterInfoType::TerminalType(terminal_type) => {
+            // todo this will need the import tracker, if this is end of the line we need all the bits!
+            let type_name = terminal_type.to_type_string(resolver);
+            write!(file, "{}", type_name)?;
+        }
+        GenericParameterInfoType::Generic(items) => match mortar_type {
+            MortarType::Reference(r) => {
+                write_for_reference(r, items)?;
+            }
+            MortarType::Array(array_type) => match array_type.as_ref() {
+                MortarType::Reference(r) => {
+                    write_for_reference(r, items)?;
+                    write!(file, "[]")?;
+                }
+                _ => Err(anyhow!("Generics provided for a non reference type array"))?,
+            },
+            _ => Err(anyhow!("Generics provided for a non reference type"))?,
+        },
+    }
+
+    Ok(())
 }
 
 pub struct TypeFileCollection {

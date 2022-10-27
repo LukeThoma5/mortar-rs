@@ -147,9 +147,38 @@ pub struct MortarConcreteType {
 }
 
 #[derive(Debug, Clone)]
+pub enum GenericParameterInfoType {
+    // Directly one of the top level's generic arguments
+    GenericParamPosition(usize),
+    // A type (generic or otherwise) that does not depend on the top level's generic arguments
+    TerminalType(MortarType),
+    // A generic type that has dependencies on the top level's generic arguments.
+    // E.g. can be ManyTypes<string, int, T0, CustomType>
+    Generic(Vec<GenericParameterInfoType>),
+}
+
+#[derive(Debug, Clone)]
 pub struct MortarGenericInfo {
     pub generic_arguments: Vec<MortarType>,
-    pub generic_properties: BTreeMap<String, usize>,
+    pub generic_properties: BTreeMap<String, GenericParameterInfoType>,
+}
+
+fn parse_param_info(val: &serde_json::Value) -> GenericParameterInfoType {
+    if let Some(v) = val.as_u64() {
+        return GenericParameterInfoType::GenericParamPosition(v as usize);
+    }
+
+    if let Some(v) = val.as_str() {
+        return GenericParameterInfoType::TerminalType(MortarType::from_generic(v.to_owned()));
+    }
+
+    if let Some(v) = val.as_array() {
+        let items = v.iter().map(parse_param_info).collect::<Vec<_>>();
+
+        return GenericParameterInfoType::Generic(items);
+    }
+
+    GenericParameterInfoType::GenericParamPosition(99)
 }
 
 impl SwaggerParser {
@@ -287,8 +316,8 @@ impl SwaggerParser {
             generic_properties = Some(
                 generic_args
                     .iter()
-                    .map(|(prop, val)| (prop.to_owned(), val.as_u64().unwrap() as usize))
-                    .collect::<BTreeMap<String, usize>>(),
+                    .map(|(prop, val)| (prop.to_owned(), parse_param_info(val)))
+                    .collect::<BTreeMap<String, GenericParameterInfoType>>(),
             );
         }
 
