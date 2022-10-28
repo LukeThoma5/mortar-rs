@@ -121,7 +121,7 @@ pub struct SchemaResolver {
     pub schemas: HashMap<MortarTypeReference, MortarConcreteType>,
 }
 
-fn map_concrete_type(t: &MortarConcreteType, resolver: &SchemaResolver) -> String {
+fn map_concrete_type(t: &MortarConcreteType, resolver: &SchemaResolver) -> anyhow::Result<String> {
     let mut type_name = t.type_name.clone();
 
     if let Some(generics) = &t.generics {
@@ -130,7 +130,7 @@ fn map_concrete_type(t: &MortarConcreteType, resolver: &SchemaResolver) -> Strin
         let len = generics.generic_arguments.len();
 
         for (index, generic_arg) in generics.generic_arguments.iter().enumerate() {
-            let generic_type_name = generic_arg.to_type_string(resolver);
+            let generic_type_name = generic_arg.to_type_string(resolver)?;
             type_name.push_str(&generic_type_name);
             if index + 1 < len {
                 type_name.push_str(", ");
@@ -140,7 +140,7 @@ fn map_concrete_type(t: &MortarConcreteType, resolver: &SchemaResolver) -> Strin
         type_name.push_str(">");
     }
 
-    type_name
+    Ok(type_name)
 }
 
 impl SchemaResolver {
@@ -148,17 +148,23 @@ impl SchemaResolver {
         SchemaResolver { schemas }
     }
 
-    pub fn resolve_to_type_name(&self, type_ref: &MortarTypeReference) -> Option<String> {
+    pub fn resolve_to_type_name(
+        &self,
+        type_ref: &MortarTypeReference,
+    ) -> anyhow::Result<Option<String>> {
         self.schemas
             .get(type_ref)
             .map(|s| map_concrete_type(s, self))
+            .transpose()
     }
 
     pub fn resolve_to_type<'a>(
         &'a self,
         type_ref: &MortarTypeReference,
-    ) -> Option<&'a MortarConcreteType> {
+    ) -> anyhow::Result<&'a MortarConcreteType> {
         self.schemas.get(type_ref)
+        .with_context(|| anyhow!("Unable to find schema {:?}. Is this a nested generic type? Try adding [GenerateSchema(typeof(NestedType<InnerType>))] to the class", &type_ref))
+        .with_context(|| format!("Failed to resolve type reference {:?}. Is the type a c# built-in or generic? Maybe an issue with MortarType::from_generic", &type_ref))
     }
 }
 
@@ -276,7 +282,7 @@ impl TypeDefinitionProperty {
 
         match &self.prop_type {
             MortarTypeOrAnon::BlackBox(s) => write!(file, "{}", s)?,
-            MortarTypeOrAnon::Type(s) => write!(file, "{}", s.to_type_string(resolver))?,
+            MortarTypeOrAnon::Type(s) => write!(file, "{}", s.to_type_string(resolver)?)?,
             MortarTypeOrAnon::Anon(a) => a.write_structure_to_file(file, resolver)?,
         };
 
@@ -387,14 +393,15 @@ pub fn generate_actions_file(
 
         let action_type = format!("{}/{}", &module.name, endpoint.action_name);
 
-        let return_type = endpoint
-            .response
-            .as_ref()
-            .map(|r| {
-                imports.track_type(r.clone());
-                r.to_type_string(&resolver)
-            })
-            .unwrap_or("void".to_owned());
+        let return_type = match endpoint.response.as_ref().map(|r| {
+            imports.track_type(r.clone());
+            r.to_type_string(&resolver)
+        }) {
+            None => "void".to_owned(),
+            Some(x) => {
+                x.with_context(|| format!("Failed to get return type of {}", &action_type))?
+            }
+        };
 
         action_request.add_property(TypeDefinitionProperty {
             name: "options".to_string(),
@@ -538,7 +545,7 @@ pub fn create_type_files(
             }
 
             let named_definition =
-                concrete_type_to_named_definition(concrete, &mut imports, resolver);
+                concrete_type_to_named_definition(concrete, &mut imports, resolver)?;
 
             named_definition.write_structure_to_file(&mut file, resolver)?;
             write!(file, "\n\n")?;
@@ -565,7 +572,7 @@ fn concrete_type_to_named_definition(
     concrete: MortarConcreteType,
     imports: &mut ImportTracker,
     resolver: &SchemaResolver,
-) -> WriteableTypeDefinition {
+) -> anyhow::Result<WriteableTypeDefinition> {
     let MortarConcreteType {
         mut type_name,
         data,
@@ -603,12 +610,6 @@ fn concrete_type_to_named_definition(
                 let mut prop_type = MortarTypeOrAnon::Type(mortar_type);
 
                 if let Some(generics) = &generics {
-                    dbg!(
-                        "The generics for {} prop {}, {:?}",
-                        &type_name,
-                        &prop,
-                        &generics
-                    );
                     if let Some(generic_position) = generics.generic_properties.get(&prop) {
                         let mut buffer = String::new();
                         write_nested_generic_name(
@@ -616,9 +617,8 @@ fn concrete_type_to_named_definition(
                             &mut buffer,
                             &mortar_type_for_track,
                             resolver,
-                        )
-                        .unwrap();
-                        println!("Buffer at the end {}", buffer);
+                            imports,
+                        )?;
                         prop_type = MortarTypeOrAnon::BlackBox(buffer)
                     } else {
                         // only track if not a generic prop
@@ -654,10 +654,10 @@ fn concrete_type_to_named_definition(
         type_name.push('>');
     }
 
-    WriteableTypeDefinition {
+    Ok(WriteableTypeDefinition {
         name: type_name,
         def,
-    }
+    })
 }
 
 pub fn write_nested_generic_name(
@@ -665,6 +665,7 @@ pub fn write_nested_generic_name(
     file: &mut String,
     mortar_type: &MortarType,
     resolver: &SchemaResolver,
+    imports: &mut ImportTracker,
 ) -> anyhow::Result<()> {
     let mut write_for_reference =
         |r: &MortarTypeReference, items: &Vec<GenericParameterInfoType>| -> anyhow::Result<()> {
@@ -675,7 +676,6 @@ pub fn write_nested_generic_name(
             let len = items.len();
 
             if let Some(generics) = t.generics.as_ref() {
-                dbg!("Writing generics for {:?}", &t);
                 write!(file, "<")?;
                 // let op = t.generics.as_ref();
 
@@ -684,7 +684,7 @@ pub fn write_nested_generic_name(
                     .zip(generics.generic_arguments.iter())
                     .enumerate()
                 {
-                    write_nested_generic_name(gen_arg, file, gen_arg_type, resolver)?;
+                    write_nested_generic_name(gen_arg, file, gen_arg_type, resolver, imports)?;
                     if generic_position + 1 < len {
                         write!(file, ", ")?;
                     }
@@ -700,20 +700,24 @@ pub fn write_nested_generic_name(
             write!(file, "T{}", pos)?;
         }
         GenericParameterInfoType::TerminalType(terminal_type) => {
-            // todo this will need the import tracker, if this is end of the line we need all the bits!
-            let type_name = terminal_type.to_type_string(resolver);
+            let type_name = terminal_type.to_type_string(resolver)?;
             write!(file, "{}", type_name)?;
+            imports.track_type(terminal_type.clone());
         }
         GenericParameterInfoType::Generic(items) => match mortar_type {
             MortarType::Reference(r) => {
                 write_for_reference(r, items)?;
             }
-            MortarType::Array(array_type) => match array_type.as_ref() {
-                MortarType::Reference(r) => {
-                    write_for_reference(r, items)?;
-                    write!(file, "[]")?;
+            MortarType::Array(_array_type) => match items.get(0) {
+                Some(GenericParameterInfoType::GenericParamPosition(pos)) => {
+                    write!(file, "T{}[]", pos)?;
                 }
-                _ => Err(anyhow!("Generics provided for a non reference type array"))?,
+                Some(GenericParameterInfoType::TerminalType(terminal_type)) => {
+                    let type_name = terminal_type.to_type_string(resolver)?;
+                    write!(file, "{}[]", type_name)?;
+                    imports.track_type(terminal_type.clone());
+                }
+                _ => Err(anyhow!("Generic provided for non generic array"))?,
             },
             _ => Err(anyhow!("Generics provided for a non reference type"))?,
         },

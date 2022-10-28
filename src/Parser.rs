@@ -26,16 +26,25 @@ pub enum EndpointType {
 }
 
 impl MortarType {
-    pub fn to_type_string(&self, resolver: &SchemaResolver) -> String {
+    pub fn to_type_string(&self, resolver: &SchemaResolver) -> Result<String> {
         // TODO make cow?
-        match self {
-            MortarType::I32 | MortarType::F32 => "number".into(),
-            MortarType::Any => "any".into(),
-            MortarType::Bool => "boolean".into(),
-            MortarType::Uuid | MortarType::DateTime | MortarType::Str => "string".into(),
-            MortarType::Array(mt) => format!("{}[]", mt.to_type_string(resolver)),
-            MortarType::Reference(r) => resolver.resolve_to_type_name(r).unwrap_or("error".into()),
-        }
+        let type_string = match self {
+            MortarType::I32 | MortarType::F32 => "number".to_owned(),
+            MortarType::Any => "any".to_owned(),
+            MortarType::Bool => "boolean".to_owned(),
+            MortarType::Uuid | MortarType::DateTime | MortarType::Str => "string".to_owned(),
+            MortarType::Array(mt) => format!("{}[]", mt.to_type_string(resolver)?),
+            MortarType::Reference(r) => {
+                let resolved = resolver.resolve_to_type_name(r);
+
+                let resolved: Option<String> = resolved?;
+
+                resolved
+                .ok_or(anyhow!("Unable to find schema {:?}. Is this a nested generic type? Try adding [GenerateSchema(typeof(NestedType<InnerType>))] to the class", r))?
+            }
+        };
+
+        Ok(type_string)
     }
 }
 
@@ -258,8 +267,6 @@ impl SwaggerParser {
                 let props = subject.get("properties");
 
                 let mut properties = BTreeMap::new();
-
-                // dbg!("{:?}", &props);
 
                 if let Some(props) = props {
                     for (prop_name, opts) in props
