@@ -423,7 +423,7 @@ pub fn generate_actions_file(
             writeln!(file, "\n")?;
         }
 
-        writeln!(file, "export const {} = (", endpoint.action_name)?;
+        writeln!(file, "export const {} = makeAction((", endpoint.action_name)?;
 
         if !action_request.is_empty() {
             write!(file, "{{")?;
@@ -460,7 +460,6 @@ pub fn generate_actions_file(
                 )?;
                 write_optional(&mut file, "queryParams")?;
                 write_optional(&mut file, "options")?;
-                writeln!(file, ");")?;
             }
             _ => {
                 writeln!(
@@ -489,11 +488,10 @@ pub fn generate_actions_file(
                 } else {
                     write_optional(&mut file, "options")?;
                 }
-                writeln!(file, ");")?;
             }
         };
 
-        writeln!(file, "\n")?;
+        writeln!(file, "), \"{}\");\n", &action_type)?;
     }
 
     let mut import_header = String::with_capacity(10 * 1024);
@@ -503,7 +501,7 @@ pub fn generate_actions_file(
         .context("Failed to generate imports")?;
 
     let default_imports =
-        "import {apiGet, apiPost, apiDelete, apiPut, ApiRequestOptions} from '@redriver/cinnamon-mui';";
+        "import {makeAction} from \"../lib\";\nimport {apiGet, apiPost, apiDelete, apiPut, ApiRequestOptions} from '@redriver/cinnamon-mui';";
 
     let file = format!(
         "// Auto Generated file, do not modify\n{}\n{}\n\n{}\n",

@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context};
+use std::fs::ReadDir;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{collections::HashMap, rc::Rc};
@@ -28,9 +29,14 @@ pub async fn run_emit_from_swagger(swagger: Swagger, settings: &Settings) -> any
 
     let output_root = Path::new(&settings.output_dir);
 
-    let module_root = output_root.join("endpoints");
+    if !output_root.is_relative() {
+        Err(anyhow!("Output directory must be relative"))?;
+    }
 
+    tokio::fs::remove_dir_all(&output_root).await?;
+    let module_root = output_root.join("endpoints");
     create_dir_all(&module_root).await?;
+    add_mortar_lib(&output_root).await?;
 
     for (path, module) in modules.into_iter() {
         let bad_code = module_codegen::generate_actions_file(module, resolver.clone())?;
@@ -82,6 +88,15 @@ pub async fn run_emit_from_swagger(swagger: Swagger, settings: &Settings) -> any
             }
         }
     }
+
+    Ok(())
+}
+
+async fn add_mortar_lib(output_root: &Path) -> anyhow::Result<()> {
+    let mortar_lib = include_bytes!("mortar_lib.ts");
+    let file_path = output_root.join("lib.ts");
+    let mut file = File::create(&file_path).await?;
+    file.write_all(mortar_lib).await?;
 
     Ok(())
 }
