@@ -437,6 +437,9 @@ impl SwaggerParser {
                     Some("path") => {
                         mortar_endpoint.route_params.push(mortar_param);
                     }
+                    Some("header") => {
+                        // skip content in headers (assurity)
+                    }
                     a => Err(anyhow!("unknown param location {:?}", a))?,
                 };
             }
