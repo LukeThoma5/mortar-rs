@@ -140,6 +140,11 @@ fn map_concrete_type(t: &MortarConcreteType, resolver: &SchemaResolver) -> anyho
         type_name.push_str(">");
     }
 
+    // if its an enum.
+    // if let MortarConcreteTypeType::Enum(_) = t.data {
+    //     type_name = format!("(keyof typeof {})", type_name);
+    // }
+
     Ok(type_name)
 }
 
@@ -170,7 +175,7 @@ impl SchemaResolver {
 
 pub enum NamedTypeDefinitionDefinition {
     Anon(AnonymousTypeDefinition),
-    Enum,
+    Enum(Vec<String>),
 }
 
 pub struct NamedTypeDefinition {
@@ -197,8 +202,19 @@ impl WriteableTypeDefinition {
 
                 write!(file, ";\n")?;
             }
-            NamedTypeDefinitionDefinition::Enum => {
-                write!(file, "export type {} = string;\n", self.name)?;
+            NamedTypeDefinitionDefinition::Enum(variants) => {
+                write!(file, "export const {} = {{\n", self.name)?;
+
+                for v in variants {
+                    write!(file, "\"{}\": \"{}\",", v, v)?;
+                }
+                write!(file, "}} as const;\n")?;
+
+                write!(
+                    file,
+                    "\nexport type {} = keyof typeof {};\n",
+                    self.name, self.name
+                )?;
             }
         }
 
@@ -579,28 +595,7 @@ fn concrete_type_to_named_definition(
     } = concrete;
 
     let def = match data {
-        MortarConcreteTypeType::Enum(_) => {
-            // todo enums
-            // make the namedTypeDefinition say if its interface/class
-            // make the def be either an anonymous type definition or a set of properties.
-            // https://bobbyhadz.com/blog/typescript-create-type-from-object-values
-            // create a const object literal and then use
-            /*
-                        const employee = {
-              id: 1,
-              name: 'James Doe',
-              salary: 100,
-            } as const; // 👈️ use const assertion
-
-            // 👇️ type Keys = "id" | "name" | "salary"
-            type Keys = keyof typeof employee;
-
-            // 👇️ type Values = 1 | "James Doe" | 100
-            type Values = typeof employee[Keys];
-
-                        */
-            NamedTypeDefinitionDefinition::Enum
-        }
+        MortarConcreteTypeType::Enum(variants) => NamedTypeDefinitionDefinition::Enum(variants),
         MortarConcreteTypeType::Obj { properties } => {
             let mut def = AnonymousTypeDefinition::new();
             for (prop, mortar_type) in properties {

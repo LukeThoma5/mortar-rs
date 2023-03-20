@@ -279,9 +279,7 @@ impl SwaggerParser {
                     }
                 }
 
-                MortarConcreteTypeType::Obj {
-                    properties, // TODO map out the properties and start writing the code writing code
-                }
+                MortarConcreteTypeType::Obj { properties }
             }
             Some("string") => {
                 let results = subject.get("enum").and_then(|v| v.as_array()).map(|o| {
