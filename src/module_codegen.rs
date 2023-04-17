@@ -2,7 +2,7 @@ use crate::{
     mortar_type::MortarType,
     parser::{
         EndpointType, GenericParameterInfoType, MortarConcreteType, MortarConcreteTypeType,
-        MortarEndpoint, MortarModule, MortarTypeReference,
+        MortarEndpoint, MortarModule, MortarParam, MortarTypeReference,
     },
     string_tools::{ensure_camel_case, ensure_pascal_case},
 };
@@ -314,16 +314,16 @@ pub enum MortarTypeOrAnon {
     BlackBox(String),
 }
 
-fn make_action_request(
+fn add_params(
+    params: &Vec<MortarParam>,
+    object_def: &mut AnonymousTypeDefinition,
     imports: &mut ImportTracker,
-    endpoint: &MortarEndpoint,
-) -> anyhow::Result<AnonymousTypeDefinition> {
-    let mut object_def = AnonymousTypeDefinition::new();
-
-    if !endpoint.route_params.is_empty() {
+    prop_name: &str,
+) -> anyhow::Result<()> {
+    if !params.is_empty() {
         let mut route_params = AnonymousTypeDefinition::new();
 
-        for route_param in &endpoint.route_params {
+        for route_param in params {
             let mut key = route_param.name.clone();
             ensure_camel_case(&mut key);
             imports.track_type(route_param.schema.clone());
@@ -335,32 +335,40 @@ fn make_action_request(
         }
 
         object_def.add_property(TypeDefinitionProperty {
-            name: "routeParams".to_owned(),
+            name: prop_name.to_owned(),
             optional: false,
             prop_type: MortarTypeOrAnon::Anon(route_params),
         });
     }
 
-    if !endpoint.query_params.is_empty() {
-        let mut query_params = AnonymousTypeDefinition::new();
+    Ok(())
+}
 
-        for query_param in &endpoint.query_params {
-            let mut key = query_param.name.clone();
-            ensure_camel_case(&mut key);
-            imports.track_type(query_param.schema.clone());
-            query_params.add_property(TypeDefinitionProperty {
-                name: key,
-                optional: false,
-                prop_type: MortarTypeOrAnon::Type(query_param.schema.clone()),
-            });
-        }
+fn make_action_request(
+    imports: &mut ImportTracker,
+    endpoint: &MortarEndpoint,
+) -> anyhow::Result<AnonymousTypeDefinition> {
+    let mut object_def = AnonymousTypeDefinition::new();
 
-        object_def.add_property(TypeDefinitionProperty {
-            name: "queryParams".to_owned(),
-            optional: false,
-            prop_type: MortarTypeOrAnon::Anon(query_params),
-        });
-    }
+    add_params(
+        &endpoint.route_params,
+        &mut object_def,
+        imports,
+        "routeParams",
+    )?;
+    add_params(
+        &endpoint.query_params,
+        &mut object_def,
+        imports,
+        "queryParams",
+    )?;
+
+    add_params(
+        &endpoint.form_params,
+        &mut object_def,
+        imports,
+        "formParams",
+    )?;
 
     if let Some(req) = &endpoint.request {
         imports.track_type(req.clone());
@@ -495,7 +503,15 @@ pub fn generate_actions_file(
                     &action_type,
                     &formatted_route
                 )?;
-                write_optional(&mut file, "request")?;
+
+                if action_request.contains_property("request") {
+                    write!(file, "request,")?;
+                } else if action_request.contains_property("formParams") {
+                    write!(file, "makeFormData(formParams),")?;
+                } else {
+                    write!(file, "undefined,")?;
+                }
+
                 if action_request.contains_property("queryParams")
                     && action_request.contains_property("options")
                 {
@@ -517,7 +533,7 @@ pub fn generate_actions_file(
         .context("Failed to generate imports")?;
 
     let default_imports =
-        "import {makeAction} from \"../lib\";\nimport {apiGet, apiPost, apiDelete, apiPut, ApiRequestOptions} from '@redriver/cinnamon-mui';";
+        "import {makeAction, makeFormData} from \"../lib\";\nimport {apiGet, apiPost, apiDelete, apiPut, ApiRequestOptions} from '@redriver/cinnamon-mui';";
 
     let file = format!(
         "// Auto Generated file, do not modify\n{}\n{}\n\n{}\n",

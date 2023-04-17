@@ -1,4 +1,4 @@
-swagger_endpoint = "https://pepper-dev-api.red-river.app/api/swagger.json"
-mortar_endpoint = "https://pepper-dev-api.red-river.app/mortar/buildId"
+swagger_endpoint = "http://localhost:5007/api/swagger.json"
+mortar_endpoint = "http://localhost:5007/mortar/buildId"
 output_dir = "./output"
 prevent_update = false

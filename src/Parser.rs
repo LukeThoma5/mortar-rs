@@ -71,6 +71,8 @@ impl MortarType {
                 // TODO properly handle float vs double vs decimal
                 (Some("number"), _) => Self::F32,
                 (_, Some("uuid")) => Self::Uuid,
+                // binary file
+                (Some("string"), Some("binary")) => Self::Any,
                 (Some("string"), _) => Self::Str,
                 // where we don't have any info e.g. its only typed as object in BE then give any type
                 (Some("object"), _) => Self::Any,
@@ -120,6 +122,7 @@ pub struct MortarEndpoint {
     pub path: String,
     pub route_params: Vec<MortarParam>,
     pub query_params: Vec<MortarParam>,
+    pub form_params: Vec<MortarParam>,
     pub request: Option<MortarType>,
     pub response: Option<MortarType>,
     pub action_name: String,
@@ -409,6 +412,7 @@ impl SwaggerParser {
             request,
             query_params: vec![],
             route_params: vec![],
+            form_params: vec![],
             action_name: mortar.action_name,
         };
 
@@ -440,6 +444,24 @@ impl SwaggerParser {
                     }
                     a => Err(anyhow!("unknown param location {:?}", a))?,
                 };
+            }
+        }
+
+        if let Some(props) = fields
+            .get("requestBody")
+            .and_then(|v| v.get("content"))
+            .and_then(|v| v.get("multipart/form-data"))
+            .and_then(|v| v.get("schema"))
+            .and_then(|v| v.get("properties"))
+            .and_then(|v| v.as_object())
+        {
+            for (name, schema) in props {
+                let schema = MortarType::from_json(schema);
+
+                mortar_endpoint.form_params.push(MortarParam {
+                    name: name.to_owned(),
+                    schema,
+                });
             }
         }
 
