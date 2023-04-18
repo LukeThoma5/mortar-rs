@@ -31,6 +31,7 @@ impl MortarType {
         let type_string = match self {
             MortarType::I32 | MortarType::F32 => "number".to_owned(),
             MortarType::Any => "any".to_owned(),
+            MortarType::FileLike => "File".to_owned(),
             MortarType::Bool => "boolean".to_owned(),
             MortarType::Uuid | MortarType::DateTime | MortarType::Str => "string".to_owned(),
             MortarType::Array(mt) => format!("{}[]", mt.to_type_string(resolver)?),
@@ -72,7 +73,7 @@ impl MortarType {
                 (Some("number"), _) => Self::F32,
                 (_, Some("uuid")) => Self::Uuid,
                 // binary file
-                (Some("string"), Some("binary")) => Self::Any,
+                (Some("string"), Some("binary")) => Self::FileLike,
                 (Some("string"), _) => Self::Str,
                 // where we don't have any info e.g. its only typed as object in BE then give any type
                 (Some("object"), _) => Self::Any,

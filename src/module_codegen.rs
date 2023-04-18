@@ -171,6 +171,16 @@ impl SchemaResolver {
         .with_context(|| anyhow!("Unable to find schema {:?}. Is this a nested generic type? Try adding [GenerateSchema(typeof(NestedType<InnerType>))] to the class", &type_ref))
         .with_context(|| format!("Failed to resolve type reference {:?}. Is the type a c# built-in or generic? Maybe an issue with MortarType::from_generic", &type_ref))
     }
+
+    pub fn is_type_enum(&self, type_ref: &MortarTypeReference) -> anyhow::Result<bool> {
+        let concrete = self.resolve_to_type(type_ref)?;
+        let is_enum = match &concrete.data {
+            MortarConcreteTypeType::Enum(_) => true,
+            _ => false,
+        };
+
+        Ok(is_enum)
+    }
 }
 
 pub enum NamedTypeDefinitionDefinition {
@@ -280,6 +290,39 @@ impl AnonymousTypeDefinition {
     }
 }
 
+struct AnonymousPropertyValue {
+    pub name: String,
+    pub value: String,
+}
+
+pub struct AnonymousObjectDefinition {
+    properties: Vec<AnonymousPropertyValue>,
+}
+
+impl AnonymousObjectDefinition {
+    pub fn new() -> Self {
+        AnonymousObjectDefinition {
+            properties: Vec::new(),
+        }
+    }
+
+    pub fn add_property(&mut self, param_property: AnonymousPropertyValue) {
+        self.properties.push(param_property);
+    }
+
+    pub fn write_structure_to_file(&self, file: &mut String) -> anyhow::Result<()> {
+        write!(file, "{{\n")?;
+
+        for prop in &self.properties {
+            write!(file, "{}: {},\n", prop.name, prop.value)?;
+        }
+
+        write!(file, "\n}}")?;
+
+        Ok(())
+    }
+}
+
 pub struct TypeDefinitionProperty {
     pub name: String,
     pub optional: bool,
@@ -344,11 +387,54 @@ fn add_params(
     Ok(())
 }
 
+fn get_mapping_command(param: &MortarParam, resolver: &SchemaResolver) -> String {
+    match &param.schema {
+        MortarType::Reference(type_ref) => {
+            if resolver
+                .is_type_enum(type_ref)
+                .expect("Form Data is for unexpected type")
+            {
+                // If its a simple enum, it should be appended to prevent inserting "'EnumVariant'"
+                "'Append'"
+            } else {
+                "'JSON'"
+            }
+        }
+        MortarType::Array(inner_type) => match inner_type.as_ref() {
+            MortarType::FileLike => "'ArrayAppend'",
+            _ => "'JSON'",
+        },
+        _ => "'Append'",
+    }
+    .to_owned()
+}
+
+fn make_mapping_commands(
+    endpoint: &MortarEndpoint,
+    resolver: &SchemaResolver,
+) -> anyhow::Result<AnonymousObjectDefinition> {
+    let mut form_commands = AnonymousObjectDefinition::new();
+
+    for route_param in &endpoint.form_params {
+        let mut key = route_param.name.clone();
+        ensure_camel_case(&mut key);
+
+        form_commands.add_property(AnonymousPropertyValue {
+            name: key,
+            value: get_mapping_command(route_param, resolver),
+        });
+    }
+
+    Ok(form_commands)
+}
+
 fn make_action_request(
     imports: &mut ImportTracker,
     endpoint: &MortarEndpoint,
-) -> anyhow::Result<AnonymousTypeDefinition> {
+) -> anyhow::Result<(AnonymousTypeDefinition, Vec<NamedTypeDefinition>)> {
     let mut object_def = AnonymousTypeDefinition::new();
+
+    let mut extra_types = vec![];
 
     add_params(
         &endpoint.route_params,
@@ -363,12 +449,42 @@ fn make_action_request(
         "queryParams",
     )?;
 
-    add_params(
-        &endpoint.form_params,
-        &mut object_def,
-        imports,
-        "formParams",
-    )?;
+    if !endpoint.form_params.is_empty() {
+        let mut form_params = AnonymousTypeDefinition::new();
+
+        let form_request_name = create_action_request_name(&endpoint, "ActionFormData");
+
+        for route_param in &endpoint.form_params {
+            let mut key = route_param.name.clone();
+            ensure_camel_case(&mut key);
+            imports.track_type(route_param.schema.clone());
+            form_params.add_property(TypeDefinitionProperty {
+                name: key,
+                optional: false,
+                prop_type: MortarTypeOrAnon::Type(route_param.schema.clone()),
+            });
+        }
+
+        object_def.add_property(TypeDefinitionProperty {
+            name: "formParams".to_owned(),
+            optional: false,
+            prop_type: MortarTypeOrAnon::BlackBox(form_request_name.clone()),
+        });
+
+        object_def.add_property(TypeDefinitionProperty {
+            name: "formTransform".to_owned(),
+            optional: true,
+            prop_type: MortarTypeOrAnon::BlackBox(format!(
+                "(request: {}) => FormData",
+                &form_request_name
+            )),
+        });
+
+        extra_types.push(NamedTypeDefinition {
+            name: form_request_name,
+            def: form_params,
+        })
+    }
 
     if let Some(req) = &endpoint.request {
         imports.track_type(req.clone());
@@ -379,13 +495,13 @@ fn make_action_request(
         });
     }
 
-    Ok(object_def)
+    Ok((object_def, extra_types))
 }
 
-fn create_action_request_name(endpoint: &MortarEndpoint) -> String {
+fn create_action_request_name(endpoint: &MortarEndpoint, suffix: &str) -> String {
     let mut action_request_name = endpoint.action_name.clone();
     ensure_pascal_case(&mut action_request_name);
-    action_request_name.push_str("ActionRequest");
+    action_request_name.push_str(suffix);
 
     action_request_name
 }
@@ -413,7 +529,7 @@ pub fn generate_actions_file(
             .as_str()[1..]
             .replace("{", "${routeParams.");
 
-        let mut action_request = make_action_request(&mut imports, &endpoint)?;
+        let (mut action_request, extra_types) = make_action_request(&mut imports, &endpoint)?;
 
         let action_type = format!("{}/{}", &module.name, endpoint.action_name);
 
@@ -439,8 +555,17 @@ pub fn generate_actions_file(
         // no more mutating
         let action_request = NamedTypeDefinition {
             def: action_request,
-            name: create_action_request_name(&endpoint),
+            name: create_action_request_name(&endpoint, "ActionRequest"),
         };
+
+        for extra in extra_types {
+            if extra.is_empty() {
+                continue;
+            }
+
+            extra.write_structure_to_file(&mut file, &resolver)?;
+            writeln!(file, "\n")?;
+        }
 
         if !action_request.is_empty() {
             action_request.write_structure_to_file(&mut file, &resolver)?;
@@ -507,7 +632,10 @@ pub fn generate_actions_file(
                 if action_request.contains_property("request") {
                     write!(file, "request,")?;
                 } else if action_request.contains_property("formParams") {
-                    write!(file, "makeFormData(formParams),")?;
+                    write!(file, "(formTransform || makeFormData)(formParams,\n")?;
+                    let commands = make_mapping_commands(&endpoint, &resolver)?;
+                    commands.write_structure_to_file(&mut file)?;
+                    write!(file, "),")?;
                 } else {
                     write!(file, "undefined,")?;
                 }
@@ -517,6 +645,12 @@ pub fn generate_actions_file(
                 {
                     // Where a delete endpoint etc make sure that query params that should have been route params are being used.
                     write!(file, "{{params: queryParams, ...options}},")?;
+                } else if action_request.contains_property("formParams") {
+                    if action_request.contains_property("options") {
+                        write!(file, "{{contentType: null, ...options}},")?;
+                    } else {
+                        write!(file, "undefined,")?;
+                    }
                 } else {
                     write_optional(&mut file, "options")?;
                 }

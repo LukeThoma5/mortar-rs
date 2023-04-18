@@ -10,12 +10,37 @@ export function makeAction<TApiAction, TActionType extends string>(
   };
 }
 
-// TODO allow them to specify their own formTransform but by default it calls makeFormData.
-export function makeFormData<T>(request: T): FormData {
+type FormDataCommand = "ArrayAppend" | "Append" | "JSON";
+type CommandObject = { [key: string]: FormDataCommand };
+export function makeFormData<T extends {}>(
+  request: T,
+  commands: CommandObject
+): FormData {
   const formData = new FormData();
-  // object keys, for each object if its an array, repeatedly call append.
-  // if a file like straight append,
-  // if its a complex object then json.stringify
-  // otherwise just append it
+
+  for (const [key, command] of Object.entries(commands)) {
+    const value = (request as any)[key];
+    if (value === undefined || value === null) {
+      continue;
+    }
+    switch (command) {
+      case "ArrayAppend":
+        if (Array.isArray(value)) {
+          for (const item of value) {
+            formData.append(key, item);
+          }
+        }
+        break;
+      case "Append":
+        formData.append(key, value);
+        break;
+      case "JSON":
+        formData.append(key, JSON.stringify(value));
+        break;
+
+      default:
+        break;
+    }
+  }
   return formData;
 }

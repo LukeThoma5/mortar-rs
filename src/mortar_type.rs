@@ -4,6 +4,7 @@ use crate::parser::MortarTypeReference;
 pub enum MortarType {
     I32,
     Str,
+    FileLike,
     F32,
     Bool,
     Uuid,
