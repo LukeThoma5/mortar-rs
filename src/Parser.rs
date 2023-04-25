@@ -84,10 +84,25 @@ impl MortarType {
 
                     Self::Array(Box::new(items))
                 }
-                _ => match value.get("additionalProperties") {
-                    Some(x) if x.is_object() => MortarType::from_json(x),
-                    _ => panic!("Unexpected schema type {:?} ", value),
-                },
+                _ => {
+                    if let Some(x) = value.get("additionalProperties") {
+                        if x.is_object() {
+                            return MortarType::from_json(x);
+                        }
+                    }
+
+                    if Some("Object")
+                        == value
+                            .get("x-mtr")
+                            .and_then(|x| x.as_object())
+                            .and_then(|x| x.get("ne"))
+                            .and_then(|x| x.as_str())
+                    {
+                        return MortarType::Any;
+                    }
+
+                    panic!("Unexpected schema type {:?} ", value)
+                }
             }
         }
     }
