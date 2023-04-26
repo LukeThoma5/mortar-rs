@@ -2,7 +2,7 @@
 name = "mortar"
 version = "0.0.14"
 authors = ["LukeThoma5 <luke.4man@btinternet.com>"]
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -12,17 +12,17 @@ edition = "2018"
 itertools = "0.8.0"
 anyhow = "1.0"
 reqwest = { version = "0.11", features = ["json"] }
-tokio = { version = "1.17", features = ["full", "time"] }
-futures = "0.3.21"
-config = "0.9"
+tokio = { version = "1.28.0", features = ["full", "time"] }
+futures = "0.3.28"
+config = "0.13.3"
 clap = { version = "3.1.8", features = ["derive"] }
 dprint-plugin-typescript = {version = "0.40.2", path = "./dprint-plugin-typescript"}
 self_update = "0.30.0"
 
-serde = { version = "1.0.89", features = ["derive"] }
-serde_derive = "1.0.89"
-serde_json =  "1.0.39"
+serde = { version = "1.0.160", features = ["derive"] }
+serde_derive = "1.0.160"
+serde_json =  "1.0.96"
 
 [dependencies.serde_with]
-version = "1.4.0"
+version = "2.3.2"
 features = [ "json" ]

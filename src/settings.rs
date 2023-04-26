@@ -25,6 +25,6 @@ impl Settings {
             .merge(config::Environment::with_prefix("MORTAR"))?;
 
         // You can deserialize (and thus freeze) the entire configuration as
-        settings.try_into()
+        settings.try_deserialize()
     }
 }

@@ -1,8 +1,7 @@
 use crate::{
-    mortar_type::MortarType,
     parser::{
         EndpointType, EnumElement, GenericParameterInfoType, MortarConcreteType,
-        MortarConcreteTypeType, MortarEndpoint, MortarModule, MortarParam, MortarTypeReference,
+        MortarConcreteTypeType, MortarEndpoint, mortar_module, MortarParam, MortarTypeReference,
     },
     string_tools::{ensure_camel_case, ensure_pascal_case},
 };
@@ -15,6 +14,8 @@ use std::{
 };
 
 use itertools::Itertools;
+use crate::parser::mortar_module::MortarModule;
+use crate::parser::mortar_type::MortarType;
 
 // use lazysort::SortedBy;
 
@@ -305,7 +306,7 @@ impl AnonymousTypeDefinition {
     }
 }
 
-struct AnonymousPropertyValue {
+pub struct AnonymousPropertyValue {
     pub name: String,
     pub value: String,
 }
