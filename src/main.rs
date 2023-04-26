@@ -13,6 +13,7 @@ use tokio::io::AsyncReadExt;
 mod parser;
 mod run_emit;
 mod settings;
+mod schema_resolver;
 
 use crate::parser::SwaggerParser;
 use crate::swagger::SwaggerApi;

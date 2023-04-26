@@ -1,5 +1,5 @@
 use crate::parser::mortar_type::MortarType;
-use crate::parser::MortarEndpoint;
+use crate::parser::endpoint::MortarEndpoint;
 
 #[derive(Debug)]
 pub struct MortarModule {

@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use crate::module_codegen::SchemaResolver;
+use crate::schema_resolver::SchemaResolver;
 use crate::parser::MortarTypeReference;
 
 impl MortarType {

@@ -1,7 +1,7 @@
 use crate::{
     parser::{
-        EndpointType, EnumElement, GenericParameterInfoType, MortarConcreteType,
-        MortarConcreteTypeType, MortarEndpoint, mortar_module, MortarParam, MortarTypeReference,
+        mortar_module,
+        MortarTypeReference,
     },
     string_tools::{ensure_camel_case, ensure_pascal_case},
 };
@@ -14,174 +14,25 @@ use std::{
 };
 
 use itertools::Itertools;
+use anon_object_definition::{AnonymousObjectDefinition, AnonymousPropertyValue};
+use anon_type_definition::{AnonymousTypeDefinition, TypeDefinitionProperty};
+use import_tracker::ImportTracker;
+use crate::parser::endpoint::{EndpointType, MortarEndpoint, MortarParam};
+use crate::parser::mortar_concrete_type::{EnumElement, GenericParameterInfoType, MortarConcreteType, MortarConcreteTypeType};
 use crate::parser::mortar_module::MortarModule;
 use crate::parser::mortar_type::MortarType;
+use crate::schema_resolver::SchemaResolver;
+
+mod import_tracker;
+mod anon_type_definition;
+mod anon_object_definition;
 
 // use lazysort::SortedBy;
-
-#[derive(Debug)]
-pub struct ImportTracker {
-    imports: HashSet<MortarType>,
-}
 
 fn get_concrete_type_path(t: &MortarConcreteType) -> String {
     let path = format!("mortar/{}", t.namespace.clone().join("/"));
 
     path
-}
-
-impl ImportTracker {
-    pub fn new() -> Self {
-        Self {
-            imports: HashSet::new(),
-        }
-    }
-
-    pub fn track_ref(&mut self, reference: MortarTypeReference) {
-        self.imports.insert(MortarType::Reference(reference));
-    }
-
-    pub fn track_type(&mut self, reference: MortarType) {
-        self.imports.insert(reference);
-    }
-
-    pub fn write_imports(
-        &mut self,
-        file: &mut String,
-        resolver: &SchemaResolver,
-        file_path: Option<&str>,
-    ) -> anyhow::Result<()> {
-        let import_map = self.emit_imports(resolver);
-
-        for (path, imports) in import_map.into_iter().sorted_by(|a, b| a.0.cmp(&b.0)) {
-            match file_path {
-                // Don't import from yourself
-                Some(p) if p == path => continue,
-                _ => {}
-            };
-
-            write!(file, "import {{")?;
-            for import in imports.into_iter().sorted_by(|a, b| a.cmp(&b)) {
-                write!(file, "{},", import)?;
-            }
-
-            write!(file, "}} from \"{}\";\n", path)?;
-        }
-
-        Ok(())
-    }
-
-    pub fn emit_imports(&mut self, resolver: &SchemaResolver) -> HashMap<String, HashSet<String>> {
-        let mut import_collection: HashMap<String, HashSet<String>> = HashMap::new();
-
-        fn add_concrete_type(
-            t: &MortarConcreteType,
-            resolver: &SchemaResolver,
-            imports: &mut HashMap<String, HashSet<String>>,
-        ) {
-            if let Some(generics) = &t.generics {
-                for generic in &generics.generic_arguments {
-                    add_type(generic, resolver, imports);
-                }
-            }
-
-            let path = get_concrete_type_path(t);
-
-            let map = imports.entry(path).or_default();
-
-            map.insert(t.type_name.clone());
-        }
-
-        fn add_type(
-            t: &MortarType,
-            resolver: &SchemaResolver,
-            imports: &mut HashMap<String, HashSet<String>>,
-        ) {
-            match t {
-                MortarType::Array(arr_type) => add_type(&arr_type, resolver, imports),
-                MortarType::Reference(ref reference) => {
-                    let concrete_type = resolver
-                        .resolve_to_type(reference)
-                        .with_context(|| format!("Failed to resolve type reference {:?}. Is the type a c# built-in or generic? Maybe an issue with MortarType::from_generic", &reference))
-                        .unwrap();
-                    add_concrete_type(concrete_type, resolver, imports);
-                }
-                _ => {}
-            }
-        }
-
-        for imported_type in &self.imports {
-            add_type(imported_type, resolver, &mut import_collection);
-        }
-
-        import_collection
-    }
-}
-
-pub struct SchemaResolver {
-    pub schemas: HashMap<MortarTypeReference, MortarConcreteType>,
-}
-
-fn map_concrete_type(t: &MortarConcreteType, resolver: &SchemaResolver) -> anyhow::Result<String> {
-    let mut type_name = t.type_name.clone();
-
-    if let Some(generics) = &t.generics {
-        type_name.push_str("<");
-
-        let len = generics.generic_arguments.len();
-
-        for (index, generic_arg) in generics.generic_arguments.iter().enumerate() {
-            let generic_type_name = generic_arg.to_type_string(resolver)?;
-            type_name.push_str(&generic_type_name);
-            if index + 1 < len {
-                type_name.push_str(", ");
-            }
-        }
-
-        type_name.push_str(">");
-    }
-
-    // if its an enum.
-    // if let MortarConcreteTypeType::Enum(_) = t.data {
-    //     type_name = format!("(keyof typeof {})", type_name);
-    // }
-
-    Ok(type_name)
-}
-
-impl SchemaResolver {
-    pub fn new(schemas: HashMap<MortarTypeReference, MortarConcreteType>) -> SchemaResolver {
-        SchemaResolver { schemas }
-    }
-
-    pub fn resolve_to_type_name(
-        &self,
-        type_ref: &MortarTypeReference,
-    ) -> anyhow::Result<Option<String>> {
-        self.schemas
-            .get(type_ref)
-            .map(|s| map_concrete_type(s, self))
-            .transpose()
-    }
-
-    pub fn resolve_to_type<'a>(
-        &'a self,
-        type_ref: &MortarTypeReference,
-    ) -> anyhow::Result<&'a MortarConcreteType> {
-        self.schemas.get(type_ref)
-        .with_context(|| anyhow!("Unable to find schema {:?}. Is this a nested generic type? Try adding [GenerateSchema(typeof(NestedType<InnerType>))] to the class", &type_ref))
-        .with_context(|| format!("Failed to resolve type reference {:?}. Is the type a c# built-in or generic? Maybe an issue with MortarType::from_generic", &type_ref))
-    }
-
-    pub fn is_type_enum(&self, type_ref: &MortarTypeReference) -> anyhow::Result<bool> {
-        let concrete = self.resolve_to_type(type_ref)?;
-        let is_enum = match &concrete.data {
-            MortarConcreteTypeType::Enum(_) => true,
-            _ => false,
-        };
-
-        Ok(is_enum)
-    }
 }
 
 pub enum NamedTypeDefinitionDefinition {
@@ -269,101 +120,6 @@ impl NamedTypeDefinition {
 
     pub fn contains_property(&self, prop: &str) -> bool {
         self.def.properties.iter().any(|x| x.name == prop)
-    }
-}
-
-pub struct AnonymousTypeDefinition {
-    properties: Vec<TypeDefinitionProperty>,
-}
-
-impl AnonymousTypeDefinition {
-    pub fn new() -> Self {
-        AnonymousTypeDefinition {
-            properties: Vec::new(),
-        }
-    }
-
-    pub fn add_property(&mut self, param_property: TypeDefinitionProperty) {
-        self.properties.push(param_property);
-    }
-
-    pub fn write_structure_to_file(
-        &self,
-        file: &mut String,
-        resolver: &SchemaResolver,
-    ) -> anyhow::Result<()> {
-        write!(file, "{{\n")?;
-
-        for prop in &self.properties {
-            prop.write_property_to_file(file, resolver)?;
-        }
-
-        write!(file, "\n}}")?;
-
-        // write!(file, "{{")
-
-        Ok(())
-    }
-}
-
-pub struct AnonymousPropertyValue {
-    pub name: String,
-    pub value: String,
-}
-
-pub struct AnonymousObjectDefinition {
-    properties: Vec<AnonymousPropertyValue>,
-}
-
-impl AnonymousObjectDefinition {
-    pub fn new() -> Self {
-        AnonymousObjectDefinition {
-            properties: Vec::new(),
-        }
-    }
-
-    pub fn add_property(&mut self, param_property: AnonymousPropertyValue) {
-        self.properties.push(param_property);
-    }
-
-    pub fn write_structure_to_file(&self, file: &mut String) -> anyhow::Result<()> {
-        write!(file, "{{\n")?;
-
-        for prop in &self.properties {
-            write!(file, "{}: {},\n", prop.name, prop.value)?;
-        }
-
-        write!(file, "\n}}")?;
-
-        Ok(())
-    }
-}
-
-pub struct TypeDefinitionProperty {
-    pub name: String,
-    pub optional: bool,
-    pub prop_type: MortarTypeOrAnon,
-}
-
-impl TypeDefinitionProperty {
-    pub fn write_property_to_file(
-        &self,
-        file: &mut String,
-        resolver: &SchemaResolver,
-    ) -> anyhow::Result<()> {
-        write!(file, "{}", self.name)?;
-
-        write!(file, "{}", if self.optional { "?: " } else { ": " })?;
-
-        match &self.prop_type {
-            MortarTypeOrAnon::BlackBox(s) => write!(file, "{}", s)?,
-            MortarTypeOrAnon::Type(s) => write!(file, "{}", s.to_type_string(resolver)?)?,
-            MortarTypeOrAnon::Anon(a) => a.write_structure_to_file(file, resolver)?,
-        };
-
-        write!(file, ";\n")?;
-
-        Ok(())
     }
 }
 

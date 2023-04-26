@@ -11,6 +11,7 @@ use crate::{
 
 use tokio::fs::{create_dir_all, File};
 use tokio::io::AsyncWriteExt;
+use crate::schema_resolver::SchemaResolver;
 
 pub async fn run_emit_from_swagger(swagger: Swagger, settings: &Settings) -> anyhow::Result<()> {
     let mut parser = SwaggerParser::new(swagger);
@@ -23,7 +24,7 @@ pub async fn run_emit_from_swagger(swagger: Swagger, settings: &Settings) -> any
 
     let schemas_to_generate = schemas.values().cloned().collect::<Vec<_>>();
 
-    let resolver = Rc::new(module_codegen::SchemaResolver::new(schemas));
+    let resolver = Rc::new(SchemaResolver::new(schemas));
 
     let formatter = formatter::Formatter::new();
 

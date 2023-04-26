@@ -1,110 +1,30 @@
 use mortar_type::MortarType;
 use crate::swagger::{Swagger, SwaggerEndpoint};
 use crate::{
-    module_codegen::SchemaResolver,
     swagger::{SwaggerComponents, SwaggerPath},
 };
 use anyhow::Result;
 use anyhow::{anyhow, Context};
 use serde::de::value;
 use std::collections::{BTreeMap, HashMap};
+use endpoint::{EndpointType, MortarEndpoint, MortarParam};
+use mortar_concrete_type::{EnumElement, GenericParameterInfoType, MortarConcreteType, MortarConcreteTypeType, MortarGenericInfo};
+use crate::schema_resolver::SchemaResolver;
 use crate::parser::mortar_module::MortarModule;
 
 pub(crate) mod mortar_module;
 pub(crate) mod mortar_type;
-
-#[derive(Debug, Clone, Copy)]
-pub enum EndpointType {
-    Get,
-    Post,
-    Put,
-    Delete,
-}
+pub(crate) mod endpoint;
+pub(crate) mod mortar_concrete_type;
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct MortarTypeReference(pub String);
-
-#[derive(Debug, Clone)]
-pub struct MortarEndpoint {
-    pub endpoint_type: EndpointType,
-    pub path: String,
-    pub route_params: Vec<MortarParam>,
-    pub query_params: Vec<MortarParam>,
-    pub form_params: Vec<MortarParam>,
-    pub request: Option<MortarType>,
-    pub response: Option<MortarType>,
-    pub action_name: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct MortarParam {
-    pub name: String,
-    pub schema: MortarType,
-}
 
 pub struct SwaggerParser {
     pub modules: BTreeMap<String, MortarModule>,
     pub schemas: HashMap<MortarTypeReference, MortarConcreteType>,
     pub paths: Option<HashMap<String, SwaggerPath>>,
     pub components: SwaggerComponents,
-}
-
-#[derive(Debug, Clone)]
-pub struct EnumElement {
-    pub key: String,
-    pub raw_value: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub enum MortarConcreteTypeType {
-    Enum(Vec<EnumElement>),
-    Obj {
-        properties: BTreeMap<String, MortarType>,
-    },
-}
-
-#[derive(Debug, Clone)]
-pub struct MortarConcreteType {
-    pub type_ref: MortarTypeReference,
-    pub namespace: Vec<String>,
-    pub type_name: String,
-    pub data: MortarConcreteTypeType,
-    pub generics: Option<MortarGenericInfo>,
-}
-
-#[derive(Debug, Clone)]
-pub enum GenericParameterInfoType {
-    // Directly one of the top level's generic arguments
-    GenericParamPosition(usize),
-    // A type (generic or otherwise) that does not depend on the top level's generic arguments
-    TerminalType(MortarType),
-    // A generic type that has dependencies on the top level's generic arguments.
-    // E.g. can be ManyTypes<string, int, T0, CustomType>
-    Generic(Vec<GenericParameterInfoType>),
-}
-
-#[derive(Debug, Clone)]
-pub struct MortarGenericInfo {
-    pub generic_arguments: Vec<MortarType>,
-    pub generic_properties: BTreeMap<String, GenericParameterInfoType>,
-}
-
-fn parse_param_info(val: &serde_json::Value) -> GenericParameterInfoType {
-    if let Some(v) = val.as_u64() {
-        return GenericParameterInfoType::GenericParamPosition(v as usize);
-    }
-
-    if let Some(v) = val.as_str() {
-        return GenericParameterInfoType::TerminalType(MortarType::from_generic(v.to_owned()));
-    }
-
-    if let Some(v) = val.as_array() {
-        let items = v.iter().map(parse_param_info).collect::<Vec<_>>();
-
-        return GenericParameterInfoType::Generic(items);
-    }
-
-    GenericParameterInfoType::GenericParamPosition(99)
 }
 
 impl SwaggerParser {
@@ -259,7 +179,7 @@ impl SwaggerParser {
             generic_properties = Some(
                 generic_args
                     .iter()
-                    .map(|(prop, val)| (prop.to_owned(), parse_param_info(val)))
+                    .map(|(prop, val)| (prop.to_owned(), mortar_concrete_type::parse_param_info(val)))
                     .collect::<BTreeMap<String, GenericParameterInfoType>>(),
             );
         }
