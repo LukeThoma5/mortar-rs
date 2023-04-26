@@ -10,6 +10,8 @@ pub struct Settings {
     pub output_dir: String,
     #[serde(default)]
     pub prevent_update: bool,
+    #[serde(default)]
+    pub skip_endpoint_generation: bool,
 }
 
 impl Settings {

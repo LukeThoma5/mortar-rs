@@ -1,4 +1,5 @@
-swagger_endpoint = "http://localhost:5007/api/swagger.json"
-mortar_endpoint = "http://localhost:5007/mortar/buildId"
+swagger_endpoint = "http://localhost:5000/api/swagger.json"
+mortar_endpoint = "http://localhost:5000/mortar/buildId"
 output_dir = "./output"
 prevent_update = false
+skip_endpoint_generation = true

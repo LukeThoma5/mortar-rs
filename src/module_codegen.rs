@@ -1,8 +1,8 @@
 use crate::{
     mortar_type::MortarType,
     parser::{
-        EndpointType, GenericParameterInfoType, MortarConcreteType, MortarConcreteTypeType,
-        MortarEndpoint, MortarModule, MortarParam, MortarTypeReference,
+        EndpointType, EnumElement, GenericParameterInfoType, MortarConcreteType,
+        MortarConcreteTypeType, MortarEndpoint, MortarModule, MortarParam, MortarTypeReference,
     },
     string_tools::{ensure_camel_case, ensure_pascal_case},
 };
@@ -185,7 +185,7 @@ impl SchemaResolver {
 
 pub enum NamedTypeDefinitionDefinition {
     Anon(AnonymousTypeDefinition),
-    Enum(Vec<String>),
+    Enum(Vec<EnumElement>),
 }
 
 pub struct NamedTypeDefinition {
@@ -215,16 +215,31 @@ impl WriteableTypeDefinition {
             NamedTypeDefinitionDefinition::Enum(variants) => {
                 write!(file, "export const {} = {{\n", self.name)?;
 
+                let mut any_variants_raw = false;
+
                 for v in variants {
-                    write!(file, "\"{}\": \"{}\",", v, v)?;
+                    if let Some(ref raw) = v.raw_value {
+                        any_variants_raw = true;
+                        write!(file, "\"{}\": {},", &v.key, raw)?;
+                    } else {
+                        write!(file, "\"{}\": \"{}\",", &v.key, &v.key)?;
+                    }
                 }
                 write!(file, "}} as const;\n")?;
 
-                write!(
-                    file,
-                    "\nexport type {} = keyof typeof {};\n",
-                    self.name, self.name
-                )?;
+                if any_variants_raw {
+                    write!(
+                        file,
+                        "\nexport type {} = typeof {}[keyof typeof {}];\n",
+                        self.name, self.name, self.name
+                    )?;
+                } else {
+                    write!(
+                        file,
+                        "\nexport type {} = keyof typeof {};\n",
+                        self.name, self.name
+                    )?;
+                }
             }
         }
 

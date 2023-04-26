@@ -33,29 +33,32 @@ pub async fn run_emit_from_swagger(swagger: Swagger, settings: &Settings) -> any
         Err(anyhow!("Output directory must be relative"))?;
     }
 
-    tokio::fs::remove_dir_all(&output_root).await?;
-    let module_root = output_root.join("endpoints");
-    create_dir_all(&module_root).await?;
+    let _ = tokio::fs::remove_dir_all(&output_root).await;
+    create_dir_all(&output_root).await?;
     add_mortar_lib(&output_root).await?;
 
-    for (path, module) in modules.into_iter() {
-        let bad_code = module_codegen::generate_actions_file(module, resolver.clone())?;
+    if !settings.skip_endpoint_generation {
+        let module_root = output_root.join("endpoints");
+        create_dir_all(&module_root).await?;
+        for (path, module) in modules.into_iter() {
+            let bad_code = module_codegen::generate_actions_file(module, resolver.clone())?;
 
-        let file_path = module_root.join(format!("{}.ts", path));
+            let file_path = module_root.join(format!("{}.ts", path));
 
-        let result = formatter
-            .format(&bad_code)
-            .with_context(|| format!("Failed to format the endpoint module: {}\n", path));
+            let result = formatter
+                .format(&bad_code)
+                .with_context(|| format!("Failed to format the endpoint module: {}\n", path));
 
-        match result {
-            Err(e) => {
-                println!("{:?}\n{}", e, bad_code);
+            match result {
+                Err(e) => {
+                    println!("{:?}\n{}", e, bad_code);
 
-                return Err(anyhow!("Failed to format endpoints {}\n{:?}", path, e));
-            }
-            Ok(src) => {
-                let mut file = File::create(&file_path).await?;
-                file.write_all(src.as_bytes()).await?;
+                    return Err(anyhow!("Failed to format endpoints {}\n{:?}", path, e));
+                }
+                Ok(src) => {
+                    let mut file = File::create(&file_path).await?;
+                    file.write_all(src.as_bytes()).await?;
+                }
             }
         }
     }

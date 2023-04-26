@@ -158,8 +158,14 @@ pub struct SwaggerParser {
 }
 
 #[derive(Debug, Clone)]
+pub struct EnumElement {
+    pub key: String,
+    pub raw_value: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub enum MortarConcreteTypeType {
-    Enum(Vec<String>),
+    Enum(Vec<EnumElement>),
     Obj {
         properties: BTreeMap<String, MortarType>,
     },
@@ -304,13 +310,34 @@ impl SwaggerParser {
                 let results = subject.get("enum").and_then(|v| v.as_array()).map(|o| {
                     o.iter()
                         .map(|value| value.as_str().unwrap().to_owned())
-                        .collect::<Vec<String>>()
+                        .map(|key| EnumElement {
+                            key,
+                            raw_value: None,
+                        })
+                        .collect::<Vec<EnumElement>>()
                 });
 
                 if let Some(values) = results {
                     MortarConcreteTypeType::Enum(values)
                 } else {
                     Err(anyhow!("type is not an enum {:?}", subject))?
+                }
+            }
+            Some("integer") => {
+                let results = subject.get("enum").and_then(|v| v.as_array()).map(|o| {
+                    o.iter()
+                        .map(|value| value.as_f64().unwrap())
+                        .map(|value| EnumElement {
+                            key: value.to_string(),
+                            raw_value: Some(value.to_string()),
+                        })
+                        .collect::<Vec<EnumElement>>()
+                });
+
+                if let Some(values) = results {
+                    MortarConcreteTypeType::Enum(values)
+                } else {
+                    Err(anyhow!("type is not an int enum {:?}", subject))?
                 }
             }
             a => Err(anyhow!("unknown type {:?}", a))?,
