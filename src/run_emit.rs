@@ -11,6 +11,7 @@ use crate::{
 
 use tokio::fs::{create_dir_all, File};
 use tokio::io::AsyncWriteExt;
+use crate::module_codegen::{action_gen, types_gen};
 use crate::schema_resolver::SchemaResolver;
 
 pub async fn run_emit_from_swagger(swagger: Swagger, settings: &Settings) -> anyhow::Result<()> {
@@ -42,7 +43,7 @@ pub async fn run_emit_from_swagger(swagger: Swagger, settings: &Settings) -> any
         let module_root = output_root.join("endpoints");
         create_dir_all(&module_root).await?;
         for (path, module) in modules.into_iter() {
-            let bad_code = module_codegen::generate_actions_file(module, resolver.clone())?;
+            let bad_code = action_gen::generate_actions_file(module, resolver.clone())?;
 
             let file_path = module_root.join(format!("{}.ts", path));
 
@@ -64,7 +65,7 @@ pub async fn run_emit_from_swagger(swagger: Swagger, settings: &Settings) -> any
         }
     }
 
-    let type_files = module_codegen::create_type_files(schemas_to_generate, &resolver)?;
+    let type_files = types_gen::create_type_files(schemas_to_generate, &resolver)?;
 
     for source_file in type_files.iter() {
         // Remove mortar/
