@@ -71,6 +71,15 @@ impl SwaggerApi {
             .await
             .context("Api call to swagger.json endpoint failed")?;
 
+        let status = response.status();
+
+        if !status.is_success() {
+            eprintln!("Swagger endpoint status code: {:?}", &status);
+            anyhow::bail!(
+                "Call to swagger endpoint unsuccessful, please check saffron console for more information"
+            );
+        }
+
         let result = response
             .json::<Swagger>()
             .await
