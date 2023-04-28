@@ -1,21 +1,22 @@
-use mortar_type::MortarType;
+use crate::parser::mortar_module::MortarModule;
+use crate::schema_resolver::SchemaResolver;
 use crate::swagger::{Swagger, SwaggerEndpoint};
-use crate::{
-    swagger::{SwaggerComponents, SwaggerPath},
-};
+use crate::swagger::{SwaggerComponents, SwaggerPath};
 use anyhow::Result;
 use anyhow::{anyhow, Context};
+use endpoint::{EndpointType, MortarEndpoint, MortarParam};
+use mortar_concrete_type::{
+    EnumElement, GenericParameterInfoType, MortarConcreteType, MortarConcreteTypeType,
+    MortarGenericInfo,
+};
+use mortar_type::MortarType;
 use serde::de::value;
 use std::collections::{BTreeMap, HashMap};
-use endpoint::{EndpointType, MortarEndpoint, MortarParam};
-use mortar_concrete_type::{EnumElement, GenericParameterInfoType, MortarConcreteType, MortarConcreteTypeType, MortarGenericInfo};
-use crate::schema_resolver::SchemaResolver;
-use crate::parser::mortar_module::MortarModule;
 
-pub(crate) mod mortar_module;
-pub(crate) mod mortar_type;
 pub(crate) mod endpoint;
 pub(crate) mod mortar_concrete_type;
+pub(crate) mod mortar_module;
+pub(crate) mod mortar_type;
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct MortarTypeReference(pub String);
@@ -61,7 +62,7 @@ impl SwaggerParser {
             .map(|k| k.clone())
             .collect::<Vec<String>>();
         for schema_fragment in keys {
-            let reference: String = "#/components/schemas/".to_owned() + &schema_fragment;
+            let reference: String = format!("#/components/schemas/{}", &schema_fragment);
             let type_ref = MortarTypeReference(reference);
             self.parse_schema(type_ref)
                 .with_context(|| format!("Failed to parse schema {}", &schema_fragment))?;
@@ -179,7 +180,9 @@ impl SwaggerParser {
             generic_properties = Some(
                 generic_args
                     .iter()
-                    .map(|(prop, val)| (prop.to_owned(), mortar_concrete_type::parse_param_info(val)))
+                    .map(|(prop, val)| {
+                        (prop.to_owned(), mortar_concrete_type::parse_param_info(val))
+                    })
                     .collect::<BTreeMap<String, GenericParameterInfoType>>(),
             );
         }

@@ -9,10 +9,10 @@ use crate::{
     formatter, module_codegen, parser::SwaggerParser, settings::Settings, swagger::SwaggerApi,
 };
 
-use tokio::fs::{create_dir_all, File};
-use tokio::io::AsyncWriteExt;
 use crate::module_codegen::{action_gen, types_gen};
 use crate::schema_resolver::SchemaResolver;
+use tokio::fs::{create_dir_all, File};
+use tokio::io::AsyncWriteExt;
 
 pub async fn run_emit_from_swagger(swagger: Swagger, settings: &Settings) -> anyhow::Result<()> {
     let mut parser = SwaggerParser::new(swagger);
@@ -48,7 +48,7 @@ pub async fn run_emit_from_swagger(swagger: Swagger, settings: &Settings) -> any
             let file_path = module_root.join(format!("{}.ts", path));
 
             let result = formatter
-                .format(&bad_code)
+                .format(&file_path, &bad_code)
                 .with_context(|| format!("Failed to format the endpoint module: {}\n", path));
 
             match result {
@@ -73,7 +73,7 @@ pub async fn run_emit_from_swagger(swagger: Swagger, settings: &Settings) -> any
         let file_path = output_root.join(format!("{}.ts", file_path_from_root));
 
         let result = formatter
-            .format(&source_file.source)
+            .format(&file_path, &source_file.source)
             .with_context(|| format!("Failed to format the module: {}\n", source_file.path));
 
         create_dir_all(&file_path.parent().unwrap()).await?;

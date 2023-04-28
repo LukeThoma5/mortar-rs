@@ -1,12 +1,10 @@
 [package]
 name = "mortar"
-version = "0.0.14"
+version = "0.0.15"
 authors = ["LukeThoma5 <luke.4man@btinternet.com>"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-# using swc from https://github.com/swc-project/swc/tree/4b79cbbffec7a9aac8e85f81f2c6925554a6c666
 
 [dependencies]
 itertools = "0.8.0"
@@ -16,7 +14,7 @@ tokio = { version = "1.28.0", features = ["full", "time"] }
 futures = "0.3.28"
 config = "0.13.3"
 clap = { version = "3.1.8", features = ["derive"] }
-dprint-plugin-typescript = {version = "0.40.2", path = "./dprint-plugin-typescript"}
+dprint-plugin-typescript = "0.83"
 self_update = "0.30.0"
 
 serde = { version = "1.0.160", features = ["derive"] }

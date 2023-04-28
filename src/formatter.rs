@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use anyhow::anyhow;
 use dprint_plugin_typescript::configuration::{Configuration, NextControlFlowPosition, QuoteStyle};
 
@@ -13,13 +15,15 @@ impl Formatter {
             .prefer_single_line(false)
             .quote_style(QuoteStyle::AlwaysDouble)
             .next_control_flow_position(NextControlFlowPosition::SameLine)
+            .indent_width(4)
             .build();
 
         Formatter { config }
     }
-    pub fn format(&self, text: &str) -> anyhow::Result<String> {
-        let result = dprint_plugin_typescript::format_string(text, &self.config)
-            .map_err(|e| anyhow!("dprint error: {}", e))?;
+    pub fn format(&self, path: &Path, text: &str) -> anyhow::Result<String> {
+        let result = dprint_plugin_typescript::format_text(path, text, &self.config)
+            .map_err(|e| anyhow!("dprint error: {}", e))?
+            .ok_or_else(|| anyhow!("dprint returned None"))?;
 
         Ok(result)
     }
