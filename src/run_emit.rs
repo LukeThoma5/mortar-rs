@@ -9,7 +9,7 @@ use crate::{
     formatter, module_codegen, parser::SwaggerParser, settings::Settings, swagger::SwaggerApi,
 };
 
-use crate::module_codegen::{action_gen, types_gen};
+use crate::module_codegen::{action_gen, standalone_request_gen, types_gen};
 use crate::schema_resolver::SchemaResolver;
 use tokio::fs::{create_dir_all, File};
 use tokio::io::AsyncWriteExt;
@@ -39,28 +39,30 @@ pub async fn run_emit_from_swagger(swagger: Swagger, settings: &Settings) -> any
     create_dir_all(&output_root).await?;
     add_mortar_lib(&output_root).await?;
 
-    if !settings.skip_endpoint_generation {
-        let module_root = output_root.join("endpoints");
-        create_dir_all(&module_root).await?;
-        for (path, module) in modules.into_iter() {
-            let bad_code = action_gen::generate_actions_file(module, resolver.clone())?;
+    let module_root = output_root.join("endpoints");
+    create_dir_all(&module_root).await?;
+    for (path, module) in modules.into_iter() {
+        let bad_code = if settings.skip_endpoint_generation {
+            standalone_request_gen::generate_requests_file(module, resolver.clone())?
+        } else {
+            action_gen::generate_actions_file(module, resolver.clone())?
+        };
 
-            let file_path = module_root.join(format!("{}.ts", path));
+        let file_path = module_root.join(format!("{}.ts", path));
 
-            let result = formatter
-                .format(&file_path, &bad_code)
-                .with_context(|| format!("Failed to format the endpoint module: {}\n", path));
+        let result = formatter
+            .format(&file_path, &bad_code)
+            .with_context(|| format!("Failed to format the endpoint module: {}\n", path));
 
-            match result {
-                Err(e) => {
-                    println!("{:?}\n{}", e, bad_code);
+        match result {
+            Err(e) => {
+                println!("{:?}\n{}", e, bad_code);
 
-                    return Err(anyhow!("Failed to format endpoints {}\n{:?}", path, e));
-                }
-                Ok(src) => {
-                    let mut file = File::create(&file_path).await?;
-                    file.write_all(src.as_bytes()).await?;
-                }
+                return Err(anyhow!("Failed to format endpoints {}\n{:?}", path, e));
+            }
+            Ok(src) => {
+                let mut file = File::create(&file_path).await?;
+                file.write_all(src.as_bytes()).await?;
             }
         }
     }
