@@ -27,7 +27,7 @@ pub async fn run_emit_from_swagger(swagger: Swagger, settings: &Settings) -> any
 
     let resolver = Rc::new(SchemaResolver::new(schemas));
 
-    let formatter = formatter::Formatter::new();
+    let formatter = get_formatter(settings);
 
     let output_root = Path::new(&settings.output_dir);
 
@@ -114,4 +114,12 @@ pub async fn run_emit(swagger_api: &SwaggerApi, settings: &Settings) -> anyhow::
         .await?;
 
     run_emit_from_swagger(swagger, settings).await
+}
+
+fn get_formatter(settings: &Settings) -> Box<dyn formatter::Formatter> {
+    if settings.no_format {
+        Box::new(formatter::NoopFormatter {})
+    } else {
+        Box::new(formatter::DprintFormatter::new())
+    }
 }

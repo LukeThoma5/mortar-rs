@@ -3,11 +3,15 @@ use std::path::Path;
 use anyhow::anyhow;
 use dprint_plugin_typescript::configuration::{Configuration, NextControlFlowPosition, QuoteStyle};
 
-pub struct Formatter {
+pub trait Formatter {
+    fn format(&self, path: &Path, text: &str) -> anyhow::Result<String>;
+}
+
+pub struct DprintFormatter {
     config: Configuration,
 }
 
-impl Formatter {
+impl DprintFormatter {
     pub fn new() -> Self {
         // build the configuration once
         let config = dprint_plugin_typescript::configuration::ConfigurationBuilder::new()
@@ -18,13 +22,24 @@ impl Formatter {
             .indent_width(4)
             .build();
 
-        Formatter { config }
+        DprintFormatter { config }
     }
-    pub fn format(&self, path: &Path, text: &str) -> anyhow::Result<String> {
+}
+
+impl Formatter for DprintFormatter {
+    fn format(&self, path: &Path, text: &str) -> anyhow::Result<String> {
         let result = dprint_plugin_typescript::format_text(path, text, &self.config)
             .map_err(|e| anyhow!("dprint error: {}", e))?
             .ok_or_else(|| anyhow!("dprint returned None"))?;
 
         Ok(result)
+    }
+}
+
+pub struct NoopFormatter {}
+
+impl Formatter for NoopFormatter {
+    fn format(&self, _path: &Path, text: &str) -> anyhow::Result<String> {
+        Ok(text.to_string())
     }
 }

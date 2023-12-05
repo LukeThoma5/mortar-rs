@@ -3,3 +3,4 @@ mortar_endpoint = "http://localhost:5000/mortar/buildId"
 output_dir = "./output"
 prevent_update = true
 skip_endpoint_generation = false
+no_format = true

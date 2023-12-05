@@ -1,4 +1,5 @@
 ## How does mortar work?
+
 Saffron app creates swagger definition, with occasional helper attributes added to aid FE action creation (x-mtr).
 
 Mortar is run as a single command, reads the settings file `mortar.toml` in the FE portal root folder.
@@ -14,7 +15,10 @@ mortar_endpoint = "http://localhost:5000/mortar/buildId"
 output_dir = "./app/mortar"
 ```
 
-
 Running mortar
 `mortar` will run once and exit.
 `mortar --watch` will rebuild types any time the backend restarts
+
+# Building
+
+Building for windows requires the `x86_64-pc-windows-msvc` host. Published build uses stable-x86_64-pc-windows-msvc rustc 1.74.0

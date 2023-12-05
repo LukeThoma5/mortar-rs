@@ -12,6 +12,8 @@ pub struct Settings {
     pub prevent_update: bool,
     #[serde(default)]
     pub skip_endpoint_generation: bool,
+    #[serde(default)]
+    pub no_format: bool,
 }
 
 impl Settings {
