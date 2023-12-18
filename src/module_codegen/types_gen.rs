@@ -1,18 +1,22 @@
-use anyhow::{anyhow, Context};
-use std::collections::HashSet;
-use itertools::Itertools;
 use crate::module_codegen;
-use crate::module_codegen::anon_type_definition::{AnonymousTypeDefinition, TypeDefinitionProperty};
+use crate::module_codegen::anon_type_definition::{
+    AnonymousTypeDefinition, TypeDefinitionProperty,
+};
 use crate::module_codegen::import_tracker::ImportTracker;
+use crate::module_codegen::named_type_definitions::{
+    NamedTypeDefinitionDefinition, WriteableTypeDefinition,
+};
 use crate::module_codegen::MortarTypeOrAnon;
-use crate::module_codegen::named_type_definitions::{NamedTypeDefinitionDefinition, WriteableTypeDefinition};
-use crate::parser::mortar_concrete_type::{GenericParameterInfoType, MortarConcreteType, MortarConcreteTypeType};
+use crate::parser::mortar_concrete_type::{
+    GenericParameterInfoType, MortarConcreteType, MortarConcreteTypeType,
+};
 use crate::parser::mortar_type::MortarType;
 use crate::parser::MortarTypeReference;
 use crate::schema_resolver::SchemaResolver;
-use std::{
-    fmt::Write,
-};
+use anyhow::{anyhow, Context};
+use itertools::Itertools;
+use std::collections::HashSet;
+use std::fmt::Write;
 
 pub fn create_type_files(
     types: Vec<MortarConcreteType>,
@@ -197,9 +201,23 @@ pub fn write_nested_generic_name(
                     write!(file, "{}[]", type_name)?;
                     imports.track_type(terminal_type.clone());
                 }
-                _ => Err(anyhow!("Generic provided for non generic array"))?,
+                _ => {
+                    write!(file, "any[]")?;
+                    eprintln!(
+                        "WARN: Generic provided for non generic array. Defaulting to any[] {:?} {:?}",
+                        mortar_type.clone(),
+                        items.get(0)
+                    );
+                }
             },
-            _ => Err(anyhow!("Generics provided for a non reference type"))?,
+            _ => {
+                write!(file, "any")?;
+                eprintln!(
+                    "WARN: Generic provided for non generic type. Defaulting to any {:?} {:?}",
+                    mortar_type.clone(),
+                    items.get(0)
+                );
+            }
         },
     }
 

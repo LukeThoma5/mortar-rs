@@ -1,6 +1,6 @@
 [package]
 name = "mortar"
-version = "0.0.17"
+version = "0.0.18"
 authors = ["LukeThoma5 <luke.4man@btinternet.com>"]
 edition = "2021"
 
