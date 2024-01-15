@@ -1049,7 +1049,7 @@ dependencies = [
 
 [[package]]
 name = "mortar"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "anyhow",
  "clap",
@@ -1057,6 +1057,7 @@ dependencies = [
  "dprint-plugin-typescript",
  "futures",
  "itertools",
+ "regex",
  "reqwest",
  "self_update",
  "serde",

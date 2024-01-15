@@ -13,14 +13,66 @@ use crate::parser::mortar_concrete_type::{
 use crate::parser::mortar_type::MortarType;
 use crate::parser::MortarTypeReference;
 use crate::schema_resolver::SchemaResolver;
+use crate::settings::Settings;
 use anyhow::{anyhow, Context};
 use itertools::Itertools;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
+
+use regex::Regex;
+
+fn check_namespaces<'a>(
+    map: &HashMap<String, Vec<MortarConcreteType>>,
+    settings: &Settings,
+) -> anyhow::Result<()> {
+    let mut failed_namespaces = Vec::new();
+    let mut failed_types = Vec::new();
+
+    if settings.banned_namespaces.is_empty() {
+        return Ok(());
+    }
+
+    let mut builder = String::new();
+
+    for namespace in &settings.banned_namespaces {
+        if !builder.is_empty() {
+            write!(builder, "|")?;
+        }
+
+        write!(builder, "(")?;
+        builder.push_str(namespace);
+        write!(builder, ")")?;
+    }
+
+    let namespace_regex = Regex::new(builder.as_str()).with_context(|| {
+        format!(
+            "Failed to create regex from banned namespaces {:?}",
+            settings.banned_namespaces
+        )
+    })?;
+
+    for (path, types) in map.iter() {
+        if namespace_regex.is_match(path) {
+            failed_namespaces.push(path.to_owned());
+            failed_types.extend(types.iter().map(|t| t.type_name.clone()));
+        }
+    }
+
+    if !failed_namespaces.is_empty() {
+        Err(anyhow!(
+            "Found banned namespaces included in api layer:\n {:#?}\nPlease review mortar.toml for reasoning behind banning of namespace. \nBanned types:\n{:#?}",
+            failed_namespaces,
+            failed_types
+        ))?;
+    }
+
+    Ok(())
+}
 
 pub fn create_type_files(
     types: Vec<MortarConcreteType>,
     resolver: &SchemaResolver,
+    settings: &Settings,
 ) -> anyhow::Result<Vec<TypeFileCollection>> {
     let mut results = Vec::with_capacity(24);
     // use into group map
@@ -28,6 +80,8 @@ pub fn create_type_files(
         .into_iter()
         .map(|t| (module_codegen::get_concrete_type_path(&t), t))
         .into_group_map();
+
+    check_namespaces(&map, settings)?;
 
     for (path, types) in map {
         let mut imports = ImportTracker::new();

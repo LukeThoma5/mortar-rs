@@ -1,9 +1,7 @@
 use crate::module_codegen::anon_type_definition::AnonymousTypeDefinition;
 use crate::parser::mortar_concrete_type::EnumElement;
 use crate::schema_resolver::SchemaResolver;
-use std::{
-    fmt::Write,
-};
+use std::fmt::Write;
 
 pub struct NamedTypeDefinition {
     pub name: String,

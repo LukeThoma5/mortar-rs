@@ -67,7 +67,7 @@ pub async fn run_emit_from_swagger(swagger: Swagger, settings: &Settings) -> any
         }
     }
 
-    let type_files = types_gen::create_type_files(schemas_to_generate, &resolver)?;
+    let type_files = types_gen::create_type_files(schemas_to_generate, &resolver, settings)?;
 
     for source_file in type_files.iter() {
         // Remove mortar/

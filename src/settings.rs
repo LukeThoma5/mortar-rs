@@ -14,6 +14,8 @@ pub struct Settings {
     pub skip_endpoint_generation: bool,
     #[serde(default)]
     pub no_format: bool,
+    #[serde(default)]
+    pub banned_namespaces: Vec<String>,
 }
 
 impl Settings {
