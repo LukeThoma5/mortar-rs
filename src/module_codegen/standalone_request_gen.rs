@@ -16,6 +16,7 @@ use anyhow::{anyhow, Context};
 use itertools::Itertools;
 use std::fmt::Write;
 use std::rc::Rc;
+use std::sync::Arc;
 
 fn create_request_object_from_params(
     params: &Vec<MortarParam>,
@@ -90,7 +91,7 @@ fn get_request_types(
 
 pub fn generate_requests_file(
     module: MortarModule,
-    resolver: Rc<SchemaResolver>,
+    resolver: Arc<SchemaResolver>,
 ) -> anyhow::Result<String> {
     let mut imports = ImportTracker::new();
     let mut file = String::with_capacity(1024 * 1024);

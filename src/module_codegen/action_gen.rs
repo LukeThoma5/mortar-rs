@@ -14,6 +14,7 @@ use crate::string_tools::{ensure_camel_case, ensure_pascal_case};
 use std::{
     fmt::Write,
 };
+use std::sync::Arc;
 
 fn add_params(
     params: &Vec<MortarParam>,
@@ -166,7 +167,7 @@ fn create_action_request_name(endpoint: &MortarEndpoint, suffix: &str) -> String
 
 pub fn generate_actions_file(
     module: MortarModule,
-    resolver: Rc<SchemaResolver>,
+    resolver: Arc<SchemaResolver>,
 ) -> anyhow::Result<String> {
     let mut imports = ImportTracker::new();
     let mut file = String::with_capacity(1024 * 1024);

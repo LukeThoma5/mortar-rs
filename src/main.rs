@@ -5,8 +5,7 @@ mod swagger;
 use anyhow::Context;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::{collections::HashMap, rc::Rc};
+use std::sync::Arc;
 use tokio::fs;
 use tokio::io::AsyncReadExt;
 
@@ -14,8 +13,8 @@ mod parser;
 mod run_emit;
 mod settings;
 mod schema_resolver;
+mod errors;
 
-use crate::parser::SwaggerParser;
 use crate::swagger::SwaggerApi;
 use settings::Settings;
 use tokio::time::{sleep, Duration};
@@ -46,6 +45,8 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
+    let settings = Arc::new(settings);
+
     // maintain swagger api for lifetime of program to avoid port exhaustion
     let swagger_api = SwaggerApi::new();
 
@@ -57,12 +58,12 @@ fn main() -> anyhow::Result<()> {
         .unwrap()
         .block_on(async {
             if let Some(fp) = args.swagger_file {
-                run_emit_from_file(&fp, &settings).await?;
+                run_emit_from_file(&fp, settings.clone()).await?;
             } else {
                 loop {
                     block_on_matching_build_id(&mut last_build_id, &swagger_api, &settings).await;
                     println!("Running emit");
-                    run_emit::run_emit(&swagger_api, &settings).await?;
+                    run_emit::run_emit(&swagger_api, settings.clone()).await?;
 
                     if !args.watch {
                         break;
@@ -140,7 +141,7 @@ async fn block_on_matching_build_id(
     }
 }
 
-pub async fn run_emit_from_file(path: &std::path::Path, settings: &Settings) -> anyhow::Result<()> {
+pub async fn run_emit_from_file(path: &std::path::Path, settings: Arc<Settings>) -> anyhow::Result<()> {
     let mut string = String::new();
     fs::File::open(path)
         .await?
@@ -150,7 +151,7 @@ pub async fn run_emit_from_file(path: &std::path::Path, settings: &Settings) -> 
     let swagger: swagger::Swagger =
         serde_json::from_str(&string).expect("file should be proper JSON");
 
-    run_emit::run_emit_from_swagger(swagger, &settings).await?;
+    run_emit::run_emit_from_swagger(swagger, settings).await?;
 
     Ok(())
 }

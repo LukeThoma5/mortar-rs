@@ -3,18 +3,20 @@ use std::fs::ReadDir;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{collections::HashMap, rc::Rc};
+use std::error::Error;
+use std::ops::Deref;
+use std::sync::Arc;
 
 use crate::swagger::Swagger;
-use crate::{
-    formatter, module_codegen, parser::SwaggerParser, settings::Settings, swagger::SwaggerApi,
-};
+use crate::{errors, formatter, module_codegen, parser::SwaggerParser, settings::Settings, swagger::SwaggerApi};
 
 use crate::module_codegen::{action_gen, standalone_request_gen, types_gen};
 use crate::schema_resolver::SchemaResolver;
 use tokio::fs::{create_dir_all, File};
 use tokio::io::AsyncWriteExt;
+use tokio::task;
 
-pub async fn run_emit_from_swagger(swagger: Swagger, settings: &Settings) -> anyhow::Result<()> {
+pub async fn run_emit_from_swagger(swagger: Swagger, settings: Arc<Settings>) -> anyhow::Result<()> {
     let mut parser = SwaggerParser::new(swagger);
 
     parser.parse_swagger().context("Failed to parse swagger")?;
@@ -25,76 +27,118 @@ pub async fn run_emit_from_swagger(swagger: Swagger, settings: &Settings) -> any
 
     let schemas_to_generate = schemas.values().cloned().collect::<Vec<_>>();
 
-    let resolver = Rc::new(SchemaResolver::new(schemas));
+    let resolver = Arc::new(SchemaResolver::new(schemas));
 
-    let formatter = get_formatter(settings);
+    let formatter = Arc::new(get_formatter(&settings));
 
-    let output_root = Path::new(&settings.output_dir);
+    let output_root = Arc::new(Path::new(&settings.output_dir).to_owned());
 
     if !output_root.is_relative() {
         Err(anyhow!("Output directory must be relative"))?;
     }
 
-    let _ = tokio::fs::remove_dir_all(&output_root).await;
-    create_dir_all(&output_root).await?;
-    add_mortar_lib(&output_root).await?;
+    let _ = tokio::fs::remove_dir_all(output_root.deref()).await;
+    create_dir_all(output_root.deref()).await?;
+    add_mortar_lib(output_root.deref()).await?;
 
-    let module_root = output_root.join("endpoints");
-    create_dir_all(&module_root).await?;
-    for (path, module) in modules.into_iter() {
-        let bad_code = if settings.skip_endpoint_generation {
-            standalone_request_gen::generate_requests_file(module, resolver.clone())?
-        } else {
-            action_gen::generate_actions_file(module, resolver.clone())?
-        };
+    let module_root = Arc::new(output_root.join("endpoints"));
+    create_dir_all(module_root.deref()).await?;
+    let tasks = modules.into_iter().map(|(path, module)| {
+        let resolver = resolver.clone();
+        let module_root = module_root.clone();
+        let formatter = formatter.clone();
+        let settings = settings.clone();
+        task::spawn(async move {
+            // Your existing code for each iteration goes here
+            let bad_code = if settings.skip_endpoint_generation {
+                standalone_request_gen::generate_requests_file(module, resolver.clone())?
+            } else {
+                action_gen::generate_actions_file(module, resolver.clone())?
+            };
 
-        let file_path = module_root.join(format!("{}.ts", path));
+            let file_path = module_root.join(format!("{}.ts", path));
 
-        let result = formatter
-            .format(&file_path, &bad_code)
-            .with_context(|| format!("Failed to format the endpoint module: {}\n", path));
+            let result = formatter
+                .format(&file_path, &bad_code)
+                .with_context(|| format!("Failed to format the endpoint module: {}\n", path));
 
-        match result {
-            Err(e) => {
-                println!("{:?}\n{}", e, bad_code);
+            match result {
+                Err(e) => {
+                    eprintln!("{:?}\n{}", e, bad_code);
 
-                return Err(anyhow!("Failed to format endpoints {}\n{:?}", path, e));
+                    return Err(anyhow!("Failed to format endpoints {}\n{:?}", path, e));
+                }
+                Ok(src) => {
+                    let mut file = File::create(&file_path).await?;
+                    file.write_all(src.as_bytes()).await?;
+                }
             }
-            Ok(src) => {
-                let mut file = File::create(&file_path).await?;
-                file.write_all(src.as_bytes()).await?;
-            }
+
+            Ok(())
+        })
+    });
+
+    // Wait for all tasks to complete
+    let results = futures::future::join_all(tasks).await;
+
+    let mut errors: Vec<anyhow::Error> = Vec::new();
+
+    // Check if any task returned an error
+    for result in results {
+        if let Err(e) = result {
+            errors.push(anyhow::Error::new(e));
         }
     }
 
-    let type_files = types_gen::create_type_files(schemas_to_generate, &resolver, settings)?;
+    let type_files = types_gen::create_type_files(schemas_to_generate, &resolver, &settings)?;
 
-    for source_file in type_files.iter() {
-        // Remove mortar/
-        let file_path_from_root = &source_file.path.as_str()[7..];
-        let file_path = output_root.join(format!("{}.ts", file_path_from_root));
+    let tasks = type_files.into_iter().map(|source_file| {
+        let formatter = formatter.clone();
+        let output_root = output_root.clone();
+        task::spawn(async move {
+            // Remove mortar/
+            let file_path_from_root = &source_file.path.as_str()[7..];
+            let file_path = output_root.join(format!("{}.ts", file_path_from_root));
 
-        let result = formatter
-            .format(&file_path, &source_file.source)
-            .with_context(|| format!("Failed to format the module: {}\n", source_file.path));
+            let result = formatter
+                .format(&file_path, &source_file.source)
+                .with_context(|| format!("Failed to format the module: {}\n", source_file.path));
 
-        create_dir_all(&file_path.parent().unwrap()).await?;
+            create_dir_all(&file_path.parent().unwrap()).await?;
 
-        match result {
-            Err(e) => {
-                println!("{:?}\n{}", e, source_file.source);
-                return Err(anyhow!(
+            match result {
+                Err(e) => {
+                    println!("{:?}\n{}", e, source_file.source);
+                    return Err(anyhow!(
                     "Failed to format type file {}\n{:?}",
                     &source_file.path,
                     e
                 ));
-            }
-            Ok(src) => {
-                let mut file = File::create(&file_path).await?;
-                file.write_all(src.as_bytes()).await?;
-            }
+                }
+                Ok(src) => {
+                    let mut file = File::create(&file_path).await?;
+                    file.write_all(src.as_bytes()).await?;
+                }
+            };
+
+            Ok(())
+        })
+    });
+
+    // Wait for all tasks to complete
+    let results = futures::future::join_all(tasks).await;
+
+    // Check if any task returned an error
+    for result in results {
+        if let Err(e) = result {
+            errors.push(anyhow::Error::new(e));
         }
     }
+
+    if !errors.is_empty() {
+        Err(errors::MultipleErrors::new(errors))?;
+    }
+
 
     Ok(())
 }
@@ -108,7 +152,7 @@ async fn add_mortar_lib(output_root: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn run_emit(swagger_api: &SwaggerApi, settings: &Settings) -> anyhow::Result<()> {
+pub async fn run_emit(swagger_api: &SwaggerApi, settings: Arc<Settings>) -> anyhow::Result<()> {
     let swagger = swagger_api
         .get_swagger_info(&settings.swagger_endpoint)
         .await?;
@@ -116,7 +160,7 @@ pub async fn run_emit(swagger_api: &SwaggerApi, settings: &Settings) -> anyhow::
     run_emit_from_swagger(swagger, settings).await
 }
 
-fn get_formatter(settings: &Settings) -> Box<dyn formatter::Formatter> {
+fn get_formatter(settings: &Settings) -> Box<dyn formatter::Formatter + Send + Sync> {
     if settings.no_format {
         Box::new(formatter::NoopFormatter {})
     } else {

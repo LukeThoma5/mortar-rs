@@ -9,5 +9,5 @@ banned_namespaces = [
     # don't include database entities (saffron)
     "RedRiver/Saffron/EntityFramework",
     # don't include database entities (current project)
-    "Storage/Model",
+    # "Storage/Model",
 ]
