@@ -17,7 +17,7 @@ use itertools::Itertools;
 use std::fmt::Write;
 use std::rc::Rc;
 
-fn create_request_object_from_params(
+pub fn create_request_object_from_params(
     params: &Vec<MortarParam>,
     imports: &mut ImportTracker,
     name_base: &str,
@@ -46,7 +46,7 @@ fn create_request_object_from_params(
     }))
 }
 
-fn get_request_base_name(endpoint: &MortarEndpoint) -> String {
+pub fn get_request_base_name(endpoint: &MortarEndpoint) -> String {
     let mut action_request_name = endpoint.action_name.clone();
     ensure_pascal_case(&mut action_request_name);
     action_request_name

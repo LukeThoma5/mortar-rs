@@ -14,36 +14,9 @@ use crate::string_tools::{ensure_camel_case, ensure_pascal_case};
 use std::{
     fmt::Write,
 };
+use crate::module_codegen::standalone_request_gen::{create_request_object_from_params, get_request_base_name};
 
-fn add_params(
-    params: &Vec<MortarParam>,
-    object_def: &mut AnonymousTypeDefinition,
-    imports: &mut ImportTracker,
-    prop_name: &str,
-) -> anyhow::Result<()> {
-    if !params.is_empty() {
-        let mut route_params = AnonymousTypeDefinition::new();
 
-        for route_param in params {
-            let mut key = route_param.name.clone();
-            ensure_camel_case(&mut key);
-            imports.track_type(route_param.schema.clone());
-            route_params.add_property(TypeDefinitionProperty {
-                name: key,
-                optional: false,
-                prop_type: MortarTypeOrAnon::Type(route_param.schema.clone()),
-            });
-        }
-
-        object_def.add_property(TypeDefinitionProperty {
-            name: prop_name.to_owned(),
-            optional: false,
-            prop_type: MortarTypeOrAnon::Anon(route_params),
-        });
-    }
-
-    Ok(())
-}
 
 fn get_mapping_command(param: &MortarParam, resolver: &SchemaResolver) -> String {
     match &param.schema {
@@ -94,39 +67,47 @@ fn make_action_request(
 
     let mut extra_types = vec![];
 
+    let base_name = get_request_base_name(&endpoint);
+
+    let mut add_params = |params: &Vec<MortarParam>, prop_name: &str, suffix: &str| -> anyhow::Result<()> {
+        if let Some(named) = create_request_object_from_params(
+            &params,
+            imports,
+            &base_name,
+            suffix,
+        )? {
+            object_def.add_property(TypeDefinitionProperty {
+                name: prop_name.to_owned(),
+                optional: false,
+                prop_type: MortarTypeOrAnon::BlackBox(named.name.clone()),
+            });
+            extra_types.push(named);
+        }
+
+        Ok(())
+    };
+
     add_params(
         &endpoint.route_params,
-        &mut object_def,
-        imports,
         "routeParams",
+        "RouteParams",
     )?;
     add_params(
         &endpoint.query_params,
-        &mut object_def,
-        imports,
         "queryParams",
+        "QueryParams",
     )?;
 
-    if !endpoint.form_params.is_empty() {
-        let mut form_params = AnonymousTypeDefinition::new();
-
-        let form_request_name = create_action_request_name(&endpoint, "ActionFormData");
-
-        for route_param in &endpoint.form_params {
-            let mut key = route_param.name.clone();
-            ensure_camel_case(&mut key);
-            imports.track_type(route_param.schema.clone());
-            form_params.add_property(TypeDefinitionProperty {
-                name: key,
-                optional: false,
-                prop_type: MortarTypeOrAnon::Type(route_param.schema.clone()),
-            });
-        }
-
+    if let Some(named) = create_request_object_from_params(
+        &endpoint.form_params,
+        imports,
+        &base_name,
+        "ActionFormData",
+    )? {
         object_def.add_property(TypeDefinitionProperty {
-            name: "formParams".to_owned(),
+            name:  "formParams".to_owned(),
             optional: false,
-            prop_type: MortarTypeOrAnon::BlackBox(form_request_name.clone()),
+            prop_type: MortarTypeOrAnon::BlackBox(named.name.clone()),
         });
 
         object_def.add_property(TypeDefinitionProperty {
@@ -134,14 +115,11 @@ fn make_action_request(
             optional: true,
             prop_type: MortarTypeOrAnon::BlackBox(format!(
                 "(request: {}) => FormData",
-                &form_request_name
+                &named.name
             )),
         });
 
-        extra_types.push(NamedTypeDefinition {
-            name: form_request_name,
-            def: form_params,
-        })
+        extra_types.push(named);
     }
 
     if let Some(req) = &endpoint.request {
