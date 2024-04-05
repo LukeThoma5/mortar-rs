@@ -28,5 +28,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          path: target/**/*.exe
+          path: target
           retention-days: 1
