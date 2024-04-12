@@ -23,6 +23,8 @@ jobs:
           target: x86_64-pc-windows-msvc
 
       - name: Cargo build
+        env:
+          CC: clang
         run: |
           cargo build --release --target x86_64-pc-windows-msvc
 
