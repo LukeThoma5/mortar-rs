@@ -28,5 +28,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          path: target
+          path: target/x86_64-pc-windows-msvc/release/mortar.exe
           retention-days: 1
