@@ -21,8 +21,7 @@ use settings::Settings;
 use tokio::time::{sleep, Duration};
 
 use clap::Parser;
-use self_update::cargo_crate_version;
-/// Simple program to greet a person
+
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
@@ -39,20 +38,14 @@ fn main() -> anyhow::Result<()> {
 
     dbg!("{:?}", &settings);
 
-    if !settings.prevent_update {
-        let updated = update()?;
-        if updated {
-            return Ok(());
-        }
-    }
-
     // maintain swagger api for lifetime of program to avoid port exhaustion
     let swagger_api = SwaggerApi::new();
 
     let mut last_build_id: Option<String> = None;
 
-    let result: anyhow::Result<()> = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
+    let result: anyhow::Result<()> = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .enable_io()
         .build()
         .unwrap()
         .block_on(async {
@@ -76,34 +69,6 @@ fn main() -> anyhow::Result<()> {
     result
 }
 
-fn update() -> anyhow::Result<bool> {
-    let status = match self_update::backends::github::Update::configure()
-        .repo_owner("LukeThoma5")
-        .repo_name("mortar-rs")
-        .bin_name("mortar")
-        .show_download_progress(true)
-        .current_version(cargo_crate_version!())
-        .build()?
-        .update()
-    {
-        Ok(status) => status,
-        Err(err) => {
-            println!("WARN: Error updating: {:?}", err);
-            return Ok(false);
-        }
-    };
-
-    let updated = status.updated();
-
-    if updated {
-        println!(
-            "Successfully updated to {}. Please restart.",
-            status.version()
-        );
-    }
-
-    Ok(updated)
-}
 
 async fn block_on_matching_build_id(
     last_build_id: &mut Option<String>,

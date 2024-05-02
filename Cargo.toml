@@ -15,7 +15,6 @@ futures = "0.3.29"
 config = "0.13.4"
 clap = { version = "4.4.11", features = ["derive"] }
 dprint-plugin-typescript = "0.88.7"
-self_update = "0.39.0"
 regex = "1.10.2"
 
 serde = { version = "1.0.193", features = ["derive"] }

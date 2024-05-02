@@ -9,8 +9,6 @@ pub struct Settings {
     pub mortar_endpoint: String,
     pub output_dir: String,
     #[serde(default)]
-    pub prevent_update: bool,
-    #[serde(default)]
     pub skip_endpoint_generation: bool,
     #[serde(default)]
     pub no_format: bool,
