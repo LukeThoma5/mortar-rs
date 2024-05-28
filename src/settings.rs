@@ -14,6 +14,7 @@ pub struct Settings {
     pub no_format: bool,
     #[serde(default)]
     pub banned_namespaces: Vec<String>,
+    pub cinnamon_library: Option<String>,
 }
 
 impl Settings {

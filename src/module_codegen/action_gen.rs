@@ -15,7 +15,7 @@ use std::{
     fmt::Write,
 };
 use crate::module_codegen::standalone_request_gen::{create_request_object_from_params, get_request_base_name};
-
+use crate::settings::Settings;
 
 
 fn get_mapping_command(param: &MortarParam, resolver: &SchemaResolver) -> String {
@@ -145,6 +145,7 @@ fn create_action_request_name(endpoint: &MortarEndpoint, suffix: &str) -> String
 pub fn generate_actions_file(
     module: MortarModule,
     resolver: Rc<SchemaResolver>,
+    settings: &Settings
 ) -> anyhow::Result<String> {
     let mut imports = ImportTracker::new();
     let mut file = String::with_capacity(1024 * 1024);
@@ -302,12 +303,13 @@ pub fn generate_actions_file(
         .write_imports(&mut import_header, &resolver, None)
         .context("Failed to generate imports")?;
 
-    let default_imports =
-        "import {makeAction, makeFormData} from \"../lib\";\nimport {apiGet, apiPost, apiDelete, apiPut, ApiRequestOptions} from '@redriver/cinnamon-mui';";
 
+
+    let cinnamon_library: &str = settings.cinnamon_library.as_ref().map_or_else(|| "@redriver/cinnamon-mui", |f| f);
     let file = format!(
-        "// Auto Generated file, do not modify\n{}\n{}\n\n{}\n",
-        default_imports, import_header, file
+        "// Auto Generated file, do not modify
+import {{makeAction, makeFormData}} from \"../lib\";\nimport {{apiGet, apiPost, apiDelete, apiPut, ApiRequestOptions}} from '{}';\n{}\n\n{}\n",
+        cinnamon_library, import_header, file
     );
 
     return Ok(file);

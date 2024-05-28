@@ -65,17 +65,16 @@ impl MortarType {
                         }
                     }
 
-                    if Some("Object")
-                        == value
-                            .get("x-mtr")
-                            .and_then(|x| x.as_object())
-                            .and_then(|x| x.get("ne"))
-                            .and_then(|x| x.as_str())
+                    return match (value
+                        .get("x-mtr")
+                        .and_then(|x| x.as_object())
+                        .and_then(|x| x.get("ne"))
+                        .and_then(|x| x.as_str()))
                     {
-                        return MortarType::Any;
-                    }
-
-                    panic!("Unexpected schema type {:?} ", value)
+                        Some("Object") => MortarType::Any,
+                        Some("JToken") => MortarType::Any,
+                        _ => panic!("Unexpected schema type {:?} ", value)
+                    };
                 }
             }
         }

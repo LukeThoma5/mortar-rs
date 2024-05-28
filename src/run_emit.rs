@@ -45,7 +45,7 @@ pub async fn run_emit_from_swagger(swagger: Swagger, settings: &Settings) -> any
         let bad_code = if settings.skip_endpoint_generation {
             standalone_request_gen::generate_requests_file(module, resolver.clone())?
         } else {
-            action_gen::generate_actions_file(module, resolver.clone())?
+            action_gen::generate_actions_file(module, resolver.clone(), settings)?
         };
 
         let file_path = module_root.join(format!("{}.ts", path));
