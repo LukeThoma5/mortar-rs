@@ -11,13 +11,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lukethoma5/mortar-rs"
+    "url": "git+https://github.com/RedRiverSoftware/mortar-rs"
   },
   "author": "Luke Foreman <github@4man.dev>",
   "bugs": {
-    "url": "https://github.com/lukethoma5/mortar-rs/issues"
+    "url": "https://github.com/RedRiverSoftware/mortar-rs/issues"
   },
-  "homepage": "https://github.com/lukethoma5/mortar-rs#readme",
+  "homepage": "https://github.com/RedRiverSoftware/mortar-rs#readme",
   "devDependencies": {
     "@types/node": "^18.11.18",
     "@typescript-eslint/eslint-plugin": "^5.48.0",

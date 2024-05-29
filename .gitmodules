@@ -1,3 +1,0 @@
-[submodule "dprint-plugin-typescript"]
-	path = dprint-plugin-typescript
-	url = git@github.com:LukeThoma5/dprint-plugin-typescript.git
