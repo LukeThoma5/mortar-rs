@@ -58,7 +58,7 @@ jobs:
         run: |
           cd npm
           # set the binary name
-          bin="app"
+          bin="mortar"
           # derive the OS and architecture from the build matrix name
           # note: when split by a hyphen, first part is the OS and the second is the architecture
           node_os=$(echo "${{ matrix.build.NAME }}" | cut -d '-' -f1)
@@ -86,7 +86,7 @@ jobs:
           cp "../target/${{ matrix.build.TARGET }}/release/${bin}" "${node_pkg}/bin"
           # publish the package
           cd "${node_pkg}"
-          npm publish
+          npm publish --dry-run
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
 
@@ -108,9 +108,9 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          cd npm/app
+          cd npm/mortar
           yarn install # requires optional dependencies to be present in the registry
           yarn build
-          npm publish
+          npm publish --dry-run
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
