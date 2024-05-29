@@ -86,7 +86,7 @@ jobs:
           cp "../target/${{ matrix.build.TARGET }}/release/${bin}" "${node_pkg}/bin"
           # publish the package
           cd "${node_pkg}"
-          npm publish --dry-run
+          npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
 
@@ -111,6 +111,6 @@ jobs:
           cd npm/mortar
           yarn install # requires optional dependencies to be present in the registry
           yarn build
-          npm publish --dry-run
+          npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
