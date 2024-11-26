@@ -28,7 +28,7 @@ impl DprintFormatter {
 
 impl Formatter for DprintFormatter {
     fn format(&self, path: &Path, text: &str) -> anyhow::Result<String> {
-        let result = dprint_plugin_typescript::format_text(path, text, &self.config)
+        let result = dprint_plugin_typescript::format_text(path, Some("ts"), text.to_string(), &self.config)
             .map_err(|e| anyhow!("dprint error: {}", e))?
             .ok_or_else(|| anyhow!("dprint returned None"))?;
 
