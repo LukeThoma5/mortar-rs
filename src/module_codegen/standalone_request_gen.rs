@@ -55,8 +55,10 @@ pub fn get_request_base_name(endpoint: &MortarEndpoint) -> String {
 fn get_request_types(
     module: MortarModule,
     imports: &mut ImportTracker,
-) -> anyhow::Result<Vec<NamedTypeDefinition>> {
+) -> anyhow::Result<(Vec<NamedTypeDefinition>, AnonymousObjectDefinition)> {
     let mut action_types = vec![];
+
+    let mut paths = AnonymousObjectDefinition::new();
 
     for endpoint in module
         .endpoints
@@ -72,7 +74,20 @@ fn get_request_types(
             &base_name,
             "RouteParams",
         )? {
+            let formatted_route = endpoint
+                .path
+                [1..]
+                .replace("{", "${routeParams.");
+            paths.add_property(AnonymousPropertyValue {
+                name: base_name.clone(),
+                value: format!("(routeParams: {}) => `${{base_path}}{}`", &named.name, &formatted_route)
+            });
             action_types.push(named);
+        } else {
+            paths.add_property(AnonymousPropertyValue {
+                name: base_name.clone(),
+                value: format!("`${{base_path}}{}`", &endpoint.path[1..])
+            })
         }
 
         if let Some(named) = create_request_object_from_params(
@@ -85,7 +100,7 @@ fn get_request_types(
         }
     }
 
-    return Ok(action_types);
+    Ok((action_types, paths))
 }
 
 pub fn generate_requests_file(
@@ -95,7 +110,7 @@ pub fn generate_requests_file(
     let mut imports = ImportTracker::new();
     let mut file = String::with_capacity(1024 * 1024);
 
-    let mut types = get_request_types(module, &mut imports)?;
+    let (mut types, paths) = get_request_types(module, &mut imports)?;
 
     types.sort_by_cached_key(|t| t.name.clone());
 
@@ -104,7 +119,9 @@ pub fn generate_requests_file(
         .write_imports(&mut file, &resolver, None)
         .context("Failed to generate imports")?;
 
-    write!(file, "\n")?;
+    write!(file, "\nexport const PathFactory = (base_path: string) => (")?;
+    paths.write_structure_to_file(&mut file)?;
+    write!(file, ");\n")?;
 
     for t in types {
         t.write_structure_to_file(&mut file, &resolver)?;
