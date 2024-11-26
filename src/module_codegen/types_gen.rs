@@ -27,6 +27,7 @@ fn check_namespaces<'a>(
 ) -> anyhow::Result<()> {
     let mut failed_namespaces = Vec::new();
     let mut failed_types = Vec::new();
+    let mut failed_type_refs = Vec::new();
 
     if settings.banned_namespaces.is_empty() {
         return Ok(());
@@ -55,14 +56,32 @@ fn check_namespaces<'a>(
         if namespace_regex.is_match(path) {
             failed_namespaces.push(path.to_owned());
             failed_types.extend(types.iter().map(|t| t.type_name.clone()));
+            failed_type_refs.extend(types.iter().map(|t| t.type_ref.clone()));
         }
     }
 
     if !failed_namespaces.is_empty() {
+        let mut types_using_failed_types = Vec::new();
+        for types in map.values() {
+            for t in types.iter() {
+                if let MortarConcreteTypeType::Obj {ref properties} = t.data {
+                    for tt in properties.values() {
+                        match tt  {
+                            MortarType::Reference(ref r) if failed_type_refs.contains(r) => {
+                                types_using_failed_types.push(t.type_name.clone());
+                            },
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+
         Err(anyhow!(
-            "Found banned namespaces included in api layer:\n {:#?}\nPlease review mortar.toml for reasoning behind banning of namespace. \nBanned types:\n{:#?}",
+            "Found banned namespaces included in api layer:\n {:#?}\nPlease review mortar.toml for reasoning behind banning of namespace. \nBanned types:\n{:#?}\nUsed by:\n{:#?}",
             failed_namespaces,
-            failed_types
+            failed_types,
+            types_using_failed_types
         ))?;
     }
 
