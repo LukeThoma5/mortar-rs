@@ -1,6 +1,6 @@
 [package]
 name = "mortar"
-version = "0.1.5"
+version = "0.1.6"
 authors = ["LukeThoma5 <github@4man.dev>"]
 edition = "2021"
 

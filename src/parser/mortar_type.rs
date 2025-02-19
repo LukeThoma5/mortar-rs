@@ -35,12 +35,16 @@ impl MortarType {
         if let Some(v) = value.get("$ref") {
             Self::new(v.as_str().unwrap().to_owned())
         } else {
+            if value.get("anyOf").is_some() {
+                // TODO - allow for string | integer
+                return Self::Any;
+            }
             match (
                 value.get("type").and_then(|x| x.as_str()),
                 value.get("format").and_then(|x| x.as_str()),
             ) {
                 (Some("date-time"), _) => Self::DateTime,
-                (_, Some("int32") | Some("int64")) => Self::I32,
+                (_, Some("int32") | Some("int64")) | (Some("integer"), _) => Self::I32,
                 (Some("boolean"), _) => Self::Bool,
                 (Some("float"), _) => Self::F32,
                 // TODO properly handle float vs double vs decimal
@@ -50,7 +54,7 @@ impl MortarType {
                 (Some("string"), Some("binary")) => Self::FileLike,
                 (Some("string"), _) => Self::Str,
                 // where we don't have any info e.g. its only typed as object in BE then give any type
-                (Some("object"), _) => Self::Any,
+                (Some("object"), _) if value.get("additionalProperties").is_none() => Self::Any,
                 (Some("array"), _) => {
                     let items = value.get("items").expect("Array doesn't specify items");
 
