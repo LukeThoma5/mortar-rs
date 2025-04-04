@@ -175,8 +175,10 @@ pub fn generate_actions_file(
             r.to_type_string(&resolver)
         }) {
             None => "void".to_owned(),
-            Some(x) => {
-                x.with_context(|| format!("Failed to get return type of {}", &action_type))?
+            Some(Ok(x)) => x,
+            Some(Err(x)) => {
+                dbg!("Failed to get return type of {}\n{:?}", &action_type, x);
+                "unknown".to_owned()
             }
         };
 

@@ -1,6 +1,6 @@
 {
   "name": "@redriver/mortar",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "bin": "lib/index.js",
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -26,8 +26,8 @@
     "typescript": "^4.9.4"
   },
   "optionalDependencies": {
-    "@redriver/mortar-linux-x64": "0.1.7",
-    "@redriver/mortar-windows-x64": "0.1.7"
+    "@redriver/mortar-linux-x64": "0.1.8",
+    "@redriver/mortar-windows-x64": "0.1.8"
   },
   "eslintConfig": {
     "extends": [

@@ -17,8 +17,12 @@ impl MortarType {
 
                 let resolved: Option<String> = resolved?;
 
-                resolved
-                .ok_or(anyhow!("Unable to find schema {:?}. Is this a nested generic type? Try adding [GenerateSchema(typeof(NestedType<InnerType>))] to the class", r))?
+                if let Some(resolved) = resolved {
+                    resolved
+                } else {
+                    dbg!("Unable to find schema {:?}. Is this a nested generic type? Try adding [GenerateSchema(typeof(NestedType<InnerType>))] to the class", &r);
+                    "any".to_owned()
+                }
             }
         };
 
@@ -76,8 +80,12 @@ impl MortarType {
                         .and_then(|x| x.as_str()))
                     {
                         Some("Object") => MortarType::Any,
+                        Some("Dictionary") => MortarType::Any,
                         Some("JToken") => MortarType::Any,
-                        _ => panic!("Unexpected schema type {:?} ", value)
+                        x => {
+                            dbg!("Unexpected schema type {:?}\n{:?}", value, x);
+                            MortarType::Any
+                        }
                     };
                 }
             }

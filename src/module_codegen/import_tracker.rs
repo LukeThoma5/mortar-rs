@@ -85,11 +85,13 @@ impl ImportTracker {
             match t {
                 MortarType::Array(arr_type) => add_type(&arr_type, resolver, imports),
                 MortarType::Reference(ref reference) => {
-                    let concrete_type = resolver
+                    if let Ok(concrete_type)  = resolver
                         .resolve_to_type(reference)
-                        .with_context(|| format!("Failed to resolve type reference {:?}. Is the type a c# built-in or generic? Maybe an issue with MortarType::from_generic", &reference))
-                        .unwrap();
-                    add_concrete_type(concrete_type, resolver, imports);
+                    {
+                        add_concrete_type(concrete_type, resolver, imports);
+                    } else {
+                        dbg!("Failed to resolve type reference {:?}. Is the type a c# built-in or generic? Maybe an issue with MortarType::from_generic", &reference);
+                    }
                 }
                 _ => {}
             }
