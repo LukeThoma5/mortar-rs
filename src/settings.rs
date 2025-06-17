@@ -15,6 +15,8 @@ pub struct Settings {
     #[serde(default)]
     pub banned_namespaces: Vec<String>,
     pub cinnamon_library: Option<String>,
+    #[serde(default)]
+    pub strict_or_null: bool,
 }
 
 impl Settings {

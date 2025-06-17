@@ -125,7 +125,7 @@ pub fn create_type_files(
             let named_definition =
                 concrete_type_to_named_definition(concrete, &mut imports, resolver)?;
 
-            named_definition.write_structure_to_file(&mut file, resolver)?;
+            named_definition.write_structure_to_file(&mut file, resolver, settings)?;
             write!(file, "\n\n")?;
         }
 
@@ -190,6 +190,7 @@ fn concrete_type_to_named_definition(
                     name: prop,
                     // Todo how to handle optional types
                     optional: false,
+                    nullable: false,
                     prop_type,
                 });
             }

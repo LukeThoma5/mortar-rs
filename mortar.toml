@@ -3,11 +3,12 @@ mortar_endpoint = "http://localhost:5000/mortar/buildId"
 output_dir = "./output"
 prevent_update = true
 skip_endpoint_generation = false
+strict_or_null = true
 no_format = false
 banned_namespaces = [
     # regex to match namespaces to exclude
     # don't include database entities (saffron)
     "RedRiver/Saffron/EntityFramework",
     # don't include database entities (current project)
-    "Storage/Model",
+#    "Storage/Model",
 ]

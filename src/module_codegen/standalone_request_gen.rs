@@ -16,12 +16,14 @@ use anyhow::{anyhow, Context};
 use itertools::Itertools;
 use std::fmt::Write;
 use std::rc::Rc;
+use crate::settings::Settings;
 
 pub fn create_request_object_from_params(
     params: &Vec<MortarParam>,
     imports: &mut ImportTracker,
     name_base: &str,
     suffix: &str,
+    nullable_props: bool
 ) -> anyhow::Result<Option<NamedTypeDefinition>> {
     if params.is_empty() {
         return Ok(None);
@@ -36,6 +38,7 @@ pub fn create_request_object_from_params(
         route_params.add_property(TypeDefinitionProperty {
             name: key,
             optional: false,
+            nullable: nullable_props,
             prop_type: MortarTypeOrAnon::Type(route_param.schema.clone()),
         });
     }
@@ -73,6 +76,7 @@ fn get_request_types(
             imports,
             &base_name,
             "RouteParams",
+            false,
         )? {
             let formatted_route = endpoint
                 .path
@@ -95,6 +99,7 @@ fn get_request_types(
             imports,
             &base_name,
             "QueryParams",
+            true
         )? {
             action_types.push(named);
         }
@@ -106,6 +111,7 @@ fn get_request_types(
 pub fn generate_requests_file(
     module: MortarModule,
     resolver: Rc<SchemaResolver>,
+    settings: &Settings,
 ) -> anyhow::Result<String> {
     let mut imports = ImportTracker::new();
     let mut file = String::with_capacity(1024 * 1024);
@@ -124,7 +130,7 @@ pub fn generate_requests_file(
     write!(file, ");\n")?;
 
     for t in types {
-        t.write_structure_to_file(&mut file, &resolver)?;
+        t.write_structure_to_file(&mut file, &resolver, settings)?;
         writeln!(file, "\n")?;
     }
 

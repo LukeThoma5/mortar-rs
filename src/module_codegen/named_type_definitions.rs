@@ -2,6 +2,7 @@ use crate::module_codegen::anon_type_definition::AnonymousTypeDefinition;
 use crate::parser::mortar_concrete_type::EnumElement;
 use crate::schema_resolver::SchemaResolver;
 use std::fmt::Write;
+use crate::settings::Settings;
 
 pub struct NamedTypeDefinition {
     pub name: String,
@@ -18,12 +19,13 @@ impl WriteableTypeDefinition {
         &self,
         file: &mut String,
         resolver: &SchemaResolver,
+        settings: &Settings,
     ) -> anyhow::Result<()> {
         match &self.def {
             NamedTypeDefinitionDefinition::Anon(def) => {
                 write!(file, "export interface {} ", self.name)?;
 
-                def.write_structure_to_file(file, resolver)?;
+                def.write_structure_to_file(file, resolver, settings)?;
 
                 write!(file, ";\n")?;
             }
@@ -71,10 +73,11 @@ impl NamedTypeDefinition {
         &self,
         file: &mut String,
         resolver: &SchemaResolver,
+        settings: &Settings,
     ) -> anyhow::Result<()> {
         write!(file, "export interface {} ", self.name)?;
 
-        self.def.write_structure_to_file(file, resolver)?;
+        self.def.write_structure_to_file(file, resolver, settings)?;
 
         write!(file, ";\n")?;
 

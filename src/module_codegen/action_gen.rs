@@ -69,16 +69,18 @@ fn make_action_request(
 
     let base_name = get_request_base_name(&endpoint);
 
-    let mut add_params = |params: &Vec<MortarParam>, prop_name: &str, suffix: &str| -> anyhow::Result<()> {
+    let mut add_params = |params: &Vec<MortarParam>, prop_name: &str, suffix: &str, nullable_props: bool| -> anyhow::Result<()> {
         if let Some(named) = create_request_object_from_params(
             &params,
             imports,
             &base_name,
             suffix,
+            nullable_props
         )? {
             object_def.add_property(TypeDefinitionProperty {
                 name: prop_name.to_owned(),
                 optional: false,
+                nullable: false,
                 prop_type: MortarTypeOrAnon::BlackBox(named.name.clone()),
             });
             extra_types.push(named);
@@ -91,11 +93,13 @@ fn make_action_request(
         &endpoint.route_params,
         "routeParams",
         "RouteParams",
+        false,
     )?;
     add_params(
         &endpoint.query_params,
         "queryParams",
         "QueryParams",
+        true
     )?;
 
     if let Some(named) = create_request_object_from_params(
@@ -103,16 +107,19 @@ fn make_action_request(
         imports,
         &base_name,
         "ActionFormData",
+        false,
     )? {
         object_def.add_property(TypeDefinitionProperty {
             name:  "formParams".to_owned(),
             optional: false,
+            nullable: false,
             prop_type: MortarTypeOrAnon::BlackBox(named.name.clone()),
         });
 
         object_def.add_property(TypeDefinitionProperty {
             name: "formTransform".to_owned(),
             optional: true,
+            nullable: false,
             prop_type: MortarTypeOrAnon::BlackBox(format!(
                 "(request: {}) => FormData",
                 &named.name
@@ -127,6 +134,7 @@ fn make_action_request(
         object_def.add_property(TypeDefinitionProperty {
             name: "request".to_owned(),
             optional: false,
+            nullable: false,
             prop_type: MortarTypeOrAnon::Type(req.clone()),
         });
     }
@@ -185,6 +193,7 @@ pub fn generate_actions_file(
         action_request.add_property(TypeDefinitionProperty {
             name: "options".to_string(),
             optional: true,
+            nullable: false,
             prop_type: MortarTypeOrAnon::BlackBox(format!(
                 "Partial<ApiRequestOptions<{}, \"{}\">>",
                 &return_type, &action_type
@@ -202,12 +211,12 @@ pub fn generate_actions_file(
                 continue;
             }
 
-            extra.write_structure_to_file(&mut file, &resolver)?;
+            extra.write_structure_to_file(&mut file, &resolver, settings)?;
             writeln!(file, "\n")?;
         }
 
         if !action_request.is_empty() {
-            action_request.write_structure_to_file(&mut file, &resolver)?;
+            action_request.write_structure_to_file(&mut file, &resolver, settings)?;
             writeln!(file, "\n")?;
         }
 

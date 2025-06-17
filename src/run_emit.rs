@@ -43,7 +43,7 @@ pub async fn run_emit_from_swagger(swagger: Swagger, settings: &Settings) -> any
     create_dir_all(&module_root).await?;
     for (path, module) in modules.into_iter() {
         let bad_code = if settings.skip_endpoint_generation {
-            standalone_request_gen::generate_requests_file(module, resolver.clone())?
+            standalone_request_gen::generate_requests_file(module, resolver.clone(), settings)?
         } else {
             action_gen::generate_actions_file(module, resolver.clone(), settings)?
         };
