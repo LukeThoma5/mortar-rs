@@ -45,7 +45,7 @@ jobs:
         with:
           command: build
           args: --release --target ${{ matrix.build.TARGET }}
-          use-cross: ${{ matrix.build.OS == 'ubuntu-20.04' }} # use `cross` for Linux builds
+          use-cross: ${{ matrix.build.OS == 'ubuntu-latest' }} # use `cross` for Linux builds
 
       - name: Install node
         uses: actions/setup-node@v3
@@ -93,7 +93,7 @@ jobs:
   publish-npm-base:
     name: Publish the base NPM package
     needs: publish-npm-binaries
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v3
