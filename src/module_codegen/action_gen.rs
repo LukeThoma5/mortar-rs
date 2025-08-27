@@ -121,7 +121,7 @@ fn make_action_request(
             optional: true,
             nullable: false,
             prop_type: MortarTypeOrAnon::BlackBox(format!(
-                "(request: {}) => FormData",
+                "(request: {}, commands: CommandObject) => FormData",
                 &named.name
             )),
         });
@@ -319,7 +319,7 @@ pub fn generate_actions_file(
     let cinnamon_library: &str = settings.cinnamon_library.as_ref().map_or_else(|| "@redriver/cinnamon-mui", |f| f);
     let file = format!(
         "// Auto Generated file, do not modify
-import {{makeAction, makeFormData}} from \"../lib\";\nimport {{apiGet, apiPost, apiDelete, apiPut, ApiRequestOptions}} from '{}';\n{}\n\n{}\n",
+import {{makeAction, makeFormData, CommandObject}} from \"../lib\";\nimport {{apiGet, apiPost, apiDelete, apiPut, ApiRequestOptions}} from '{}';\n{}\n\n{}\n",
         cinnamon_library, import_header, file
     );
 

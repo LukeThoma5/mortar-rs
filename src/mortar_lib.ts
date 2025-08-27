@@ -10,8 +10,8 @@ export function makeAction<TApiAction, TActionType extends string>(
   };
 }
 
-type FormDataCommand = "ArrayAppend" | "Append" | "JSON";
-type CommandObject = { [key: string]: FormDataCommand };
+export type FormDataCommand = "ArrayAppend" | "Append" | "JSON";
+export type CommandObject = { [key: string]: FormDataCommand };
 export function makeFormData<T extends {}>(
   request: T,
   commands: CommandObject
